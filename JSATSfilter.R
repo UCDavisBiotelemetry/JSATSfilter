@@ -1,10 +1,10 @@
-# Version MP_TeknoFilter2.5.1.4_20180625.R
+# Version MP_TeknoFilter2.5.1.5_20180705.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-06-25 by Matt Pagel
-#                                           "Version" 2.5.1.4
+#                                   Last Updated: 2018-07-05 by Matt Pagel
+#                                  Version 2.5.1.5 (2.6 functions inactive)
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -19,25 +19,30 @@
 # TODO 20180313: process unknown tags too. Figure out if their PRI is near-integer seconds, less than 1hr, 1m (tester/beacon)
 # TODO 20180313: for RT files, ignore incoming file name...just read them all in to a big array pre-clean.
 # See also TODOs in-line
+
+# daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
+
 setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+memory.limit(44000)
 # TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
 # 2017
-vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
+ vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
+# vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
 DoCleanJST = FALSE
 DoCleanRT = FALSE
 DoCleanPrePre = FALSE
 DoCleanShoreRT = FALSE
 DoCleanSUM = FALSE
 DoCleanATS = FALSE
-DoCleanLotek = TRUE
+DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
 FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
-FLOPFACTOR = 0.155 # PNNL spec: 0.006. Arnold: .04*5 = 0.2
+FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
+FLOPFACTOR_2.6 = 0.006 
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
 COUNTERMAX = 12 # PNNL spec: 12
 NON_RT_Dir = "raw/"
@@ -77,6 +82,40 @@ install.load('data.table')
 # install.load('readxl') # added where needed (only ATS XLSx
 # install.load('readr') # added where needed (only ATS files - CSV and XLS)
 # install.load('stringr') # added where needed (only ATS files)
+
+# 
+# # https://math.stackexchange.com/questions/914288/how-to-find-the-approximate-basic-period-or-gcd-of-a-list-of-numbers
+# # https://math.stackexchange.com/questions/1834472/approximate-greatest-common-divisor/2523521
+# This seems more memory-intensive than the "normal" way.
+# mean_xy <-function(factor, values) {
+#   setDT(values)
+#   values[,xs:=cos(2*pi*v/factor)][,ys:=sin(2*pi*v/factor)]
+#   return (c(sum(values[xs/.N]),sum(values[ys/.N])))
+# }
+# 
+# calculatePeriodAppeal <- function (factor, values) {
+#   m = mean_xy(factor, values)
+#   return(sqrt(m[1]*m[1]+m[2]*m[2]))
+# }
+# 
+# # calculateBestLinear <- function(factor, values) {
+# #  mx = mean_x(factor, values).n()
+# #  my = mean_y(factor, values).n()
+# #  y0 = factor*atan2(my,mx)/(2*pi).n()
+# #  err = 1-sqrt(mx^2+my^2).n()
+# #  return [factor*x + y0, err]
+# # }
+# calculateGCDAppeal <- function(factor, values) {
+#   m = mean_xy(factor, values)
+#   return(1 - sqrt((m[1]-1)^2+m[2]^2)/2)
+# }
+# 
+# testvalues<-data.table(v=c(5.01,9.95,15.02,34.82,59.22))
+# strt <- round(0.651*5*100)
+# fin <- round(1.3*5*100)
+# testfact <- data.table(factor=(strt:fin)/100)
+# 
+# testfact[,gcd:=calculateGCDAppeal(factor,list(5.01,9.95,15.02,34.82,59.22))]
 
 # Set up custom code for going back and forth with data table and data frame read/write files
 data.table.parse<-function (file = "", n = NULL, text = NULL, prompt = "?", keep.source = getOption("keep.source"), 
@@ -132,13 +171,78 @@ sum.file.sizes <- function(DT) {
   return(unlist(DT[,.(x=sum(size))],use.names=F)[1])
 }
 
-# filter out multipath, filter windowed hits crudely
+find_ePRI <- function(obj) {
+#  browser()
+  N<-nrows(obj)
+  tmp<-data.table(merge.data.frame(x=1:COUNTERMAX,obj))
+#  tmp<-tmp[twind>0]
+  itr<-tmp[,ic:=round(twind/x,2)]
+  ll <- itr[(ic >= nPRI*0.651 & ic<=nPRI*1.3)]
+  setkey(ll,Hex,ic)
+  rv<-ll[,dist:=abs(nPRI-ic)][,.(tot=.N),by=.(ic,dist)][order(-tot,dist,-ic)][1]
+  retval<-data.table(rep(rv$ic,N))
+  return(retval)
+}
+
+magicFilter2.6 <- function(dat, countermax, filterthresh){
+  setkey(dat,Hex,dtf)
+  dat[,temporary:=as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")] # dput file stores datestamp in this basic format
+  if (is.na(dat[,.(temporary)][1])) dat[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # fwri file stores as UTC in this format ...was in this doc as %S.%OSZ
+  else dat[,dtf:=temporary]
+  dat[,temporary:=NULL]
+  dat[,winmax:=dtf+((nPRI*1.3*countermax)+1)]
+  wind_range <- dat[,.(Hex,dtf,winmax,nPRI)]
+  setkey(wind_range,Hex,dtf,winmax)
+  fit <- dat[,.(Hex,dup=dtf,hit=dtf)]
+  setkey(fit,Hex,dup,hit)
+  browser()
+  fo_windows <- foverlaps(fit,wind_range,maxgap=0,type="within",nomatch=0,mult="all")[,twind:=(hit-dtf)*1000][,dup:=NULL][,winmax:=NULL][,c('hitsInWindow','WinID'):=list(.N,.GRP),by=c("Hex","dtf")][hitsInWindow>=filterthresh]
+  if (fo_windows[,.N]>0) {
+    setkey(fo_windows,WinID)
+    fo_windows[,ePRI:=find_ePRI(.SD),by=WinID,.SDcols=c("twind","nPRI")]
+    # itr <- as.data.table(merge(x=1:countermax,fo_windows))
+    # itr[,icalc:=round(twind/x,2)]
+    flopintervals <-as.data.table(0:countermax)
+    setnames(flopintervals,c("x"))
+    flopintervals[,flop:=(x+1)*FLOPFACTOR_2.6][,flopmin:=x*ePRI-flop][,flopmax:=x*ePRI+flop][,flop:=NULL]
+    maxflop <- flopintervals[x==12,flopmax]
+    windowz <- unique(abbrev[,.(dtf,ewinmax=dtf+maxflop)])
+    dett <-res[,.(dup=dtf,dd=dtf)]
+    setkey(dett,dup,dd)
+    setkey(windowz,dtf,ewinmax)
+    fomega <- foverlaps(dett,windowz,maxgap=0,type="within",nomatch=0)[,dd:=NULL][,dif:=(dup-dtf)*1000][,dif2:=(dup-dtf)*1000]
+    flopintervals[,newmin:=flopmin*1000][,newmax:=flopmax*1000]
+    setkey(flopintervals,newmin,newmax)
+    if (fomega[,.N]>0) {
+      setkey(fomega,dif,dif2)
+      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]
+      NAs<-windHits[is.na(intervals)]
+      noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
+      noOnlyFirst<-noNAs[c>1]
+      onlyFirst<-noNAs[c==1,]
+      noOnlyFirst[,isAccepted:=TRUE]
+      NAs[,isAccepted:=FALSE][,c:=NA]
+      onlyFirst[,isAccepted:=FALSE][,c:=0]
+      LT<-rbind(noOnlyFirst,NAs,onlyFirst)
+      setkey(LT,firstHit,hit)
+      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c)]
+    } else {
+      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+    }
+  } else {
+    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+  }
+  return(logTable)
+}
+
+
+# filter windowed hits crudely
 magicFunc <- function(dat, tagHex, countermax, filterthresh){
   setkey(dat,Hex)
   tagdet <- dat[Hex==tagHex]
   setkey(tagdet,dtf)
   tagdet[,temporary:=as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")] # dput file stores datestamp in this basic format
-  if (is.na(tagdet[,.(temporary)][1])) tagdet[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%S.%OSZ", tz="UTC")] # fwri file stores as UTC in this format ...was in this doc as %S.%OSZ
+  if (is.na(tagdet[,.(temporary)][1])) tagdet[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # fwri file stores as UTC in this format ...was in this doc as %S.%OSZ
   else tagdet[,dtf:=temporary]
   tagdet[,temporary:=NULL]
   tagdet[,winmax:=dtf+((nPRI*1.3*countermax)+1)]
@@ -191,6 +295,25 @@ magicFunc <- function(dat, tagHex, countermax, filterthresh){
   }
   return(logTable)
 }
+
+dataFilter2.6 <- function(dat, filterthresh, countermax){
+  res <- dat[1==0] # copies structure
+  # timer <- 0
+  setkey(dat,Hex)
+  titl<-dat[!is.na(RecSN)][1][,RecSN]
+  ans <- magicFilter2.6(dat, countermax=countermax, filterthresh)
+  setkey(ans,nbAcceptedHitsForThisInitialHit,isAccepted)
+  ans2 <- ans[(nbAcceptedHitsForThisInitialHit >= filterthresh)&(isAccepted)]
+  if (ans2[,.N]>0) {
+    keep<-as.data.table(unique(ans2[,hit]))
+    setkey(dat,dtf)
+    setkey(keep,x)
+    res <- rbind(res, dat[keep])
+  }
+  # timer <- timer+1
+  return(res)
+}
+
 
 # filter windowed hits to verify which hits are in which windows
 dataFilter <- function(dat, filterthresh, countermax){
@@ -256,6 +379,7 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
     # find serial number somewhere in the top 10 lines
     install.load('readr')
     install.load('stringr')
+    SN<-NA
     headr <- read_lines(i,n_max=10)
     for (rw in 1:length(headr)) {
       if (startsWith(headr[rw],"Serial Number: ")) {
@@ -263,7 +387,7 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
         break
       }
     }
-    if (is_null(SN) | SN==9000) # 9000 is a placeholder in some files.
+    if (is.na(SN) || SN==9000) # 9000 is a placeholder in some files.
       { SN<- as.numeric(gsub("[a-zA-Z\\/]{0,20}([0-9]+).*$", "\\1", i))} # get it from the first number in the filename
     rl<-read_lines(i) # readr
     gs<-lapply(rl,cleanLinesATS)
@@ -306,13 +430,13 @@ filterData <- function(incomingData=NULL) {
       if (endsWith(i,'.dput') || endsWith(i,'.txt')) datos <-as.data.table(dtget(i))
       if (endsWith(i,'.fwri')) { # if it was written to disk with fwrite, use the faster fread, but make sure to set the datetime stamps
         datos <-as.data.table(fread(i))
-        datos[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%S.%OSZ", tz="UTC")] # %OS6Z doesn't seem to work correctly
+        datos[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # %OS6Z doesn't seem to work correctly
       }
       proces(dat=datos)
     }
   }
   proces <- function(dat) {
-    myResults <- dataFilter(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
+    myResults <- dataFilter(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX) # dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
     setkey(dat,dtf) # TODO 20180313: we should probably put TagID_Hex and RecSN in the key also
     setkey(myResults,dtf)
     rejecteds <- dat[!myResults]
@@ -421,7 +545,8 @@ cleanInnerWrap <-function(...) {
   itercount <- 0
   function(i, tags, headerInFile=T, leadingBlanks=0, tz="GMT", dtFormat="%Y-%m-%dT%H:%M:%OS", nacols=NULL, foutPrefix=".txt", inferredHeader=NULL, Rec_dtf_Hex_strings=c("RecSN","DateTime","TagID_Hex"), mergeFrac=NULL) {
     if (!headerInFile) {
-      dathead <- fread(i, header=F, nrows=0, stringsAsFactors=F, skip=leadingBlanks, fill=T, na.strings=c("NA","NULL","Null","null","nan","-nan","N/A",""))
+      dathead <- fread(i, header=F, nrows=10, stringsAsFactors=F, skip=leadingBlanks, fill=T, na.strings=c("NA","NULL","Null","null","nan","-nan","N/A",""))
+#      browser()
       classes<-sapply(dathead, class)
       classes[names(unlist(list(classes[which(classes %in% c("factor","numeric"))],classes[names(classes) %in% c("time","date","dtf")])))] <- "character"
       dat <- fread(i, header=F, skip=leadingBlanks, fill=T, na.strings=c("NA","NULL","Null","null","nan","-nan","N/A","","-"), colClasses=classes)
@@ -440,9 +565,11 @@ cleanInnerWrap <-function(...) {
     }
     setnames(dat,Rec_dtf_Hex_strings,c("RecSN","dtf","Hex")) 
     if (dtFormat=="EPOCH") {
-      dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf)))] # dat[,epdtf:=dtf][,dtf:=as.character(...
-      dtFormat="%Y-%m-%d %H:%M:%S"
+      dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf)),format="%Y-%m-%d %H:%M:%S")] # dat[,epdtf:=dtf][,dtf:=as.character(...
+#      browser()
+      dtFormat="%Y-%m-%d %H:%M:%OS"
     }
+    # combine the DT and FracSec columns into a single time column
     if (length(mergeFrac)>0) {
       dat[,iznumb:=ifelse(is.na(
              tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
@@ -456,10 +583,12 @@ cleanInnerWrap <-function(...) {
         ]
       dat[,c("iznumb","gt1","fracLead0","dtf"):=NULL]
       setnames(dat, old="newDateTime", new="dtf")
+      dat[,c(mergeFrac,"fracDot"):=NULL]
     }
     dat[nchar(Hex)==9,Hex:=substr(Hex,4,7)]
     setkey(dat, Hex)
     if (nrow(dat)==0) return(F)
+    # convert time string into POSIXct timestamp
     dat[,dtf:=as.POSIXct(dtf, format = dtFormat, tz=tz)]
     setkey(tags,TagID_Hex)
     dat2<-dat[tags,nomatch=0] # bring in the nominal PRI (nPRI)
@@ -468,7 +597,6 @@ cleanInnerWrap <-function(...) {
       print(unique(dat))
       return(F)
     }
-    # combine the DT and FracSec columns into a single time column and convert to POSIXct
     setkey(dat2, RecSN, Hex, dtf)
     dat2[,tlag:=shift(.SD,n=1L,fill=NA,type="lag"), by=.(Hex,RecSN),.SDcols="dtf"]
     dat3<-na.omit(dat2,cols=c("tlag")) # TODO 20180313 need to verify this doesn't drop the first for a tag
@@ -490,6 +618,7 @@ cleanInnerWrap <-function(...) {
     # I think "crazy" in Damien's original was just a check to see if matches previous tag, if not discard result of subtraction
     # Shouldn't be needed for data.table.
     SNs<-unique(dat5[,RecSN])
+    # browser()
     for(sn in SNs) { # don't trust the initial file to have only a single receiver in it
       itercount <<- itercount + 1
       # fwri format stores timestamps as UTC-based (yyyy-mm-ddTHH:MM:SS.microsZ)

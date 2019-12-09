@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter2.1_20171108.R
+# Version GS_TeknoFilter2.2a_20171116.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 11/08/2017  Gabriel Singer                                                                 #
+#                         Last Updated: 11/16/2017  Gabriel Singer                                                                 #
 #                         Included in last update: Added cleaning loop for Lotek receiver files                                    #
 #                                                                                                                                  #
 ####################################################################################################################################
@@ -40,9 +40,10 @@ mode <- function(x, i){
 }
 
 ###load taglist
-tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
-tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
-
+#tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
+#tags<- read.csv("./taglist/Brandes.csv", header = T) #list of known Tag IDs
+#tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
+tags$TagID_Hex <- as.character(tags$TagID_Hex)
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
@@ -55,7 +56,7 @@ magicFunc <- function(dat, tagHex, counter){
     if(nrow(hits)>1){
       retained<- numeric(0) #make empty df to hold detections retained
       # indices<- numeric(0) #make empty df to hold detections retained
-
+      
       for(j in 2:nrow(hits)){
         candidates<- round(as.numeric(hits$dtf[j]-hits$dtf[1])/counter, digits = 2) #subsubtract time of each det in window from initial and divide by 1:12
         candidates<- candidates[candidates>= tagid$nPRI[i]*0.651 & candidates<= tagid$nPRI[i]*1.3] #constrain values
@@ -68,7 +69,7 @@ magicFunc <- function(dat, tagHex, counter){
         #plot(table(retained))
         ePRI<- min(mode(retained, i))
         if(is.na(ePRI)) ePRI <- min(retained)
-
+        
         nbHits <- 1
         for(j in 2:nrow(hits)){
           ii <- round(as.numeric(hits$dtf[j]-hits$dtf[1])/ePRI)
@@ -137,7 +138,7 @@ for(i in list.files("./raw")){
   #rename columns to match db
   names(dat)<- c("Detection", "RecSN", "dtf", "Hex", "Tilt", "Volt", "Temp", "Pres", "Amp",
                  "Freq", "Thresh", "nbw", "snr", "Valid")
-
+  
   #change object format to tbl
   dat <- as.tbl(dat)
   #drop the barker code and the CRC from tagid field
@@ -175,43 +176,49 @@ for(i in list.files("./raw")){
 ###Cleaning loop for ATS receiver files
 timer2 <- 0
 for(i in list.files("./raw/")){
-    dat <- read_excel(paste0("./raw/", i))                    #read in each file
-    SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
-    if(is.na(SN) == TRUE) {
-      SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
-    }
-    print(SN)
-    find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
-    start <- max(find.na[find.na <= 100])                      #the value 100 can be set to anything, 
-                                                               #it just needs to be less that the total
-                                                               #number of detections in the file
-    dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
-    
-    headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-                 "BitPeriod", "Thresh")                        #make vector of new headers
-    names(dat) <- headers                                      #rename with the right headers
-    dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
-    dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
-    #dat <- dat[ ,5:15]                                         #drop the filename and site name columns
-    dat <- as.tbl(dat)                                         #change object format to tbl 
-    dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
-    dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
-                                                               #to be set to something different for tags with a PRI other than 5)
-    dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 
-                         tz="Etc/GMT-8")                       #convert to POSIXct note: fractional seconds will no longer print, but 
-                                                               #they are there. Run the next line to verify that you haven't lost your 
-                                                               #frac seconds
-    #(strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-    dat2 <- dat
-    dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
-    dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )), 
-          winmax=dat2$dtf+((dat2$nPRI*1.3*max(counter))+1))   #calculate tdiff, then remove multipath
-    dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-    dat4$tdiff[dat4$crazy==0] <- NA
-    dat5 <- dat4[,-14]
-    dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-    timer2 <- timer2+1
-    dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", timer2, ")",  "_cleaned.txt"))
+  dat <- read_excel(paste0("./raw/", i))                    #read in each file
+  SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
+  if(is.na(SN) == TRUE) {
+    SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
+  }
+  print(SN)
+  find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
+  start <- max(find.na[find.na <= 100])                      #the value 100 can be set to anything, 
+  #it just needs to be less that the total
+  #number of detections in the file
+  dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
+  
+  headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
+               "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
+  names(dat) <- headers 
+                                                            #rename with the right headers
+  extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
+  mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
+  names(mat) <- extracols
+  dat <- cbind(dat, mat)
+  dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
+  dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
+  dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
+  print(dat)
+  dat <- as.tbl(dat)                                         #change object format to tbl 
+  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
+  dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
+  #to be set to something different for tags with a PRI other than 5)
+  dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 
+                       tz="Etc/GMT-8")                       #convert to POSIXct note: fractional seconds will no longer print, but 
+  #they are there. Run the next line to verify that you haven't lost your 
+  #frac seconds
+  #(strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
+  dat2 <- dat
+  dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
+  dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )), 
+                     winmax=dat2$dtf+((dat2$nPRI*1.3*max(counter))+1))   #calculate tdiff, then remove multipath
+  dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
+  dat4$tdiff[dat4$crazy==0] <- NA
+  dat5 <- dat4[,-14]
+  dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
+  timer2 <- timer2+1
+  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", timer2, ")",  "_cleaned.txt"))
 }
 
 ###Cleaning loop for Lotek Files 
@@ -228,16 +235,16 @@ for(i in list.files("./raw/")){
   dat$Hex <- substr(dat$Hex, 2, nchar(dat$Hex))
   
   dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]               #filter receiver file by known taglist (already done in Lotek
-                                                             # software should have the same number of dets)
+  # software should have the same number of dets)
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
   dat <- as.tbl(dat)                                         #change object format to tbl 
   dat$dtf <- paste0(dat$datetime, substring(dat$FracSec,2))  #paste the fractional seconds to the end of the DT in a new column
   dat$dtf<- ymd_hms(dat$dtf) #convert to POSIXct beware this may change value of 0.0000X
-                                                             #to be set to something different for tags with a PRI other than 5)
-                                                             #convert to POSIXct note: fractional seconds will no longer print, but 
-                                                             #they are there. Run the next line to verify that you haven't lost your 
-                                                             #frac seconds
-                                                             #(strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
+  #to be set to something different for tags with a PRI other than 5)
+  #convert to POSIXct note: fractional seconds will no longer print, but 
+  #they are there. Run the next line to verify that you haven't lost your 
+  #frac seconds
+  #(strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
   dat2 <- dat
   dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
   dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )), 

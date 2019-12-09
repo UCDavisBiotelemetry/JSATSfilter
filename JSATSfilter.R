@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter2.2b_CHEdit_20180703_TagID_Hex-Fix.R
+# Version GS_TeknoFilter2.2.1_CHEdit_20180619_ATSfix.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 07/03/2018  Colby Hause                                                                    #
+#                         Last Updated: 06/19/2018  Colby Hause version editor, Matt Pagel assist                                  #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -39,9 +39,9 @@ mode <- function(x, i){
 }
 
 ###load taglist
-tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
-#tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
-tags$Tag.ID..hex.<- as.character(tags$TagID_Hex)
+tags<- read.csv("./taglist/2018FriantTagList.csv", header = T) #list of known Tag IDs
+tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
+
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
@@ -186,19 +186,21 @@ for(i in list.files("./raw/")){
   #number of detections in the file
   dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
   
+  #headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
+               #"BitPeriod", "Thresh", "Detection")                        #make vector of new headers
   headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-               "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
+               "BitPeriod", "Thresh") # TOOK OUT "DETECTION" FOR 2018 FILES  
   names(dat) <- headers 
                                                             #rename with the right headers
-  extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
+  extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON", "Detection") #aded "Detection" here
   mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
   names(mat) <- extracols
   dat <- cbind(dat, mat)
-  dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
+  dat$Hex <- substr(dat$Hex, 4, 7)                           #deal with the TagCode situation
   dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
   dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
   dat <- as.tbl(dat)                                         #change object format to tbl 
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
+  dat<- dat[dat$Hex %in% tags$TagID_Hex, ]                #filter receiver file by known taglist
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
   #to be set to something different for tags with a PRI other than 5)
   dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 

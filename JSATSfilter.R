@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter1.4_20170914.R
+# Version MP_TeknoFilter1.4a_20170831.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                            Last Updated: 09/14/2017                                                              #
+#                                            Last Updated: 2017-08-31 MP                                                           #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -17,6 +17,9 @@ install.load <- function(package.name)
 
 
 install.load('tidyverse')
+install.load('data.table')
+DoCleanJST = FALSE
+DoCleanSUM = TRUE
 
 ###counter
 counter <- 1:12
@@ -35,9 +38,6 @@ mode <- function(x, i){
   #print(i) 
   return(mod)
 }
-
-###load taglist
-tags<- read.csv("./taglist/FriantTaglist.csv", header = T) #list of known Tag IDs
 
 
 ###magicFunction
@@ -103,12 +103,14 @@ dataFilter <- function(dat, filterthresh, counter){
   return(res)
 }
 
+###load taglist
+tags<- read.csv("./taglist/FriantTaglist.csv", header = T) #list of known Tag IDs
 
-###Cleaning Loop for .jst files
-for(i in list.files("./jst")){
+###Cleaning .jst files
+cleanJST <- function(i, tags) {
   dat <- read.csv(paste0("./jst/", i), header=F)        #read in each file
   names(dat)<- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW") #rename columns
-  tags <- read.csv("./taglist/FriantTaglist.csv")
+#  tags <- read.csv("./taglist/FriantTaglist.csv")
   dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]
   dat$nPRI<- 5   # set nPRI (Nominal PRI) for the tag 
   #combine the DT and FracSec columns into a single time column and convert to POSIXct
@@ -125,48 +127,44 @@ for(i in list.files("./jst")){
   dat5 <- dat4[,-14]
   dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
   dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.txt"))
-}###the above cleaning and saving loop is good, next step incorporate it into functioning loop
+}
+
+if (DoCleanJST) for(i in list.files("./jst")) {
+  if (file.info(i)["isdir"]) next 
+  cleanJST(i, tags)
+}
 
 
 
-###Cleaning loop for .SUM files
-timer2 <- 0
-for(i in list.files("./raw")){
+###Cleaning .SUM files
+cleanSUM < function(i, tags, max_counter) {
   #read in each file
-  dat <- read.csv(paste0("./raw/", i), skip = 8, header=T)  
-  #rename columns to match db
+#  dat <- read.csv(paste0("./raw/", i), skip = 8, header=T)  
+
+  dat <- fread(paste0("./raw/", i), skip = 8, header=T)
+    #rename columns to match db
   names(dat)<- c("Detection", "RecSN", "dtf", "Hex", "Tilt", "Volt", "Temp", "Pres", "Amp",
                  "Freq", "Thresh", "nbw", "snr", "Valid")              
   
-  #change object format to tbl
-  dat <- as.tbl(dat)                                                   
-  #drop the barker code and the CRC from tagid field
-  dat$Hex <- substr(dat$Hex, 4, 7)    
-  #name and print new tbl w/ bad detect lines removed
-  (dat <- dat %>%
-      filter(Detection != "      -"))                                    
-  #filter receiver file by known taglist
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                          
-  #if there aren't any tags from the tag list in the receiver files, move on to the next file
-  if(!(nrow(dat)))next
-  #set nPRI (Nominal PRI) for the tag 
-  dat$nPRI<- 5     
-  #convert to POSIXct note: fractional secons will no longer print, but they are there
-  dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT-8")                                 
-  #run the next line to verify that you haven't lost your frac seconds
-  #(strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-  dat2 <- dat
-  dat2<- arrange(dat2, Hex, dtf)#sort by TagID and then dtf, Frac Second
-  #calculate tdiff, then remove multipath
-  dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)])), 
-                     winmax=dat2$dtf+((dat2$nPRI*1.3*max(counter))+1))
-  dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-  dat4$tdiff[dat4$crazy==0] <- NA
-  dat5 <- dat4[,-18]
-  dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-  timer2 <- timer2+1
-  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", timer2, ")",  "_cleaned.txt"))
-}     #need to test this loop with multiple files,
+    #drop the barker code and the CRC from tagid field & convert to POSIXct note: fractional secons will no longer print, but they are there
+  dat[, Hex := substr(Hex, 4, 7)][, dtf := as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT-8")][, nPRI := 5]
+    #tbl w/ bad detect lines removed, filtered by known taglist
+  dat <- dat[Detection != "      -" & Hex %in% tags[2]]
+  setkey(dat, Hex, dtf)
+  noMP <- dat[, tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex][, winmax:=dtf+nPRI*1.3*max_counter+1]
+  noMP <- noMP[!(tdiff < 0.2), tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex]
+#    while (noMP[tdiff<0.2, .N][1]) { # keep looping until multipath gone
+#    noMP[tdiff<0.2, tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex]
+#  }
+  dat5 <- noMP
+  dput(dat5, file = paste0("./cleaned/", dat5[RecSN][1], "_cleaned.txt"))
+}
+
+if (DoCleanSUM) for(i in list.files("./raw")){
+  if (file.info(i)["isdir"]) next
+  cleanSUM(i, tags, max(counter))
+}
+
 #loop ran, now feed files back into R and see if they look right
 # SN6003 <- dget("./cleaned/15-6003_cleaned.txt")
 # SN6034 <- dget("./cleaned/15-6034_cleaned.txt")
@@ -177,14 +175,14 @@ for(i in list.files("./cleaned")){
   datos <- dget(paste0("./cleaned/", i))        #read in each file
   myResults <- dataFilter(dat=datos, filterthresh=4, counter=1:12)
   rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in% 
-                       paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
-  write.csv(myResults, paste0("./accepted/", substr(i, 1, nchar(i)-12), "_accepted.csv"), row.names=F)
-  write.csv(rejecteds, paste0("./rejected/", substr(i, 1, nchar(i)-12), "_rejected.csv"), row.names=F)
+                      paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
+  write.csv(myResults, paste0("./accepted/", myResults$RecSN[1], "_accepted.csv"), row.names=F)
+  write.csv(rejecteds, paste0("./rejected/", rejecteds$RecSN[1], "_rejected.csv"), row.names=F)
 }
+
 
 
 ###############################################################
 #both filtered files end up with same data, too
 sum <- read.csv("./accepted/15-6034_accepted.csv", header = T)
 jst <- read.csv("./accepted/2015-6034_accepted.csv", header = T)
-###############################################################

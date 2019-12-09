@@ -1,13 +1,13 @@
-# Version MP_TeknoFilter2.3a_20171116.R
+# Version MP_TeknoFilter2.3a_20171116_minor.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 11/16/2017 by Matt Pagel                                                              #
+#                                   Last Updated: 11/16/2017 by Matt Pagel                                                         #
 #                                                                                                                                  #
 ####################################################################################################################################
-
-TAGFILENAME = "./taglist/FriantTaglist.csv"
+setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/Pat Brandes Filter Data/Matt")
+TAGFILENAME = "./taglist/Brandes.csv"
 DoCleanJST = FALSE
 DoCleanSUM = TRUE
 DoCleanATS = TRUE

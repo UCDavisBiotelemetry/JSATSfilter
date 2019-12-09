@@ -1,10 +1,9 @@
-# Version GS_TeknoFilter2.2a_20171116.R
+# Version GS_TeknoFilter2.2b_CHEdit_20180703_TagID_Hex-Fix.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 11/16/2017  Gabriel Singer                                                                 #
-#                         Included in last update: Added cleaning loop for Lotek receiver files                                    #
+#                         Last Updated: 07/03/2018  Colby Hause                                                                    #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -40,10 +39,9 @@ mode <- function(x, i){
 }
 
 ###load taglist
-#tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
-#tags<- read.csv("./taglist/Brandes.csv", header = T) #list of known Tag IDs
+tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
 #tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
-tags$TagID_Hex <- as.character(tags$TagID_Hex)
+tags$Tag.ID..hex.<- as.character(tags$TagID_Hex)
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
@@ -199,7 +197,6 @@ for(i in list.files("./raw/")){
   dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
   dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
   dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
-  print(dat)
   dat <- as.tbl(dat)                                         #change object format to tbl 
   dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 

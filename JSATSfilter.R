@@ -1,20 +1,17 @@
-# Version MP_TeknoFilter2.5.1.1_20180129.R
+# Version MP_TeknoFilter2.5.1.1_20180306.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 01/29/2018 by Matt Pagel                                                         #
+#                                   Last Updated: 01/24/2018 by Matt Pagel                                                         #
 #                                                                                                                                  #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:                                             #
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.                #
 #                      However, the POSIX TZ environment variable uses the opposite convention.                                    #
 #              For example, one might use TZ="JST-9" and TZ="HST10" for Japan and Hawaii, respectively.                            #
 ####################################################################################################################################
-#setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/Pat Brandes Filter Data/Matt")
-#setwd("P:/TempSSD")
 setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
-#setwd("C:/Users/chause/Desktop/Pats Filter Data/SJReceieverFilterData")
-TAGFILENAME = "./taglist/NOAATaglist20178.csv"
+TAGFILENAME = "./taglist/t2018TagInventory.csv"
 DoCleanJST = FALSE
 DoCleanRT = TRUE
 DoCleanSUM = FALSE
@@ -42,13 +39,9 @@ install.load('data.table')
 mode <- function(x, i){
   ta <- table(x)
   tam <- max(ta)
-  if (all(ta == tam))
-    mod <- NA
-  else
-    if(is.numeric(x))
-      mod <- as.numeric(names(ta)[ta == tam])
-  else
-    mod <- names(ta)[ta == tam]
+  if (all(ta == tam)) mod <- NA
+  else if(is.numeric(x)) mod <- as.numeric(names(ta)[ta == tam])
+  else mod <- names(ta)[ta == tam]
   return(mod)
 }
 
@@ -118,7 +111,7 @@ dtget <- data.table.get
 list.files.size <- function(path = ".", full.names=TRUE, nodotdot = TRUE, ignore.case = TRUE, ...) { # path = ".", pattern = NULL, all.files = FALSE, full.names = FALSE, recursive = FALSE, ignore.case = TRUE, include.dirs = FALSE, no.. = TRUE) {
   filelist <- data.table(filename=list.files(path=path, full.names=full.names, no.. = nodotdot, ignore.case = ignore.case, ...))
   filelist[,size:=file.size(filename)]
-#  totalsize<-filelist[,.(sum(size)]
+  #  totalsize<-filelist[,.(sum(size)]
   return(filelist)
 }
 
@@ -148,7 +141,7 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
   if (aclist[,.N]>0) {
     setkey(aclist,x)
     res <- tagdet[aclist]
-#    res[,(shiftzcols[2:max(shiftz)]):=NULL] # delete columns
+    #    res[,(shiftzcols[2:max(shiftz)]):=NULL] # delete columns
     res[,twind:=l1-dtf]
     itr <- as.data.table(merge(x=counter,res))
     itr[,icalc:=round(twind/x,2)]
@@ -168,12 +161,12 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
     setkey(windowz,dtf,ewinmax)
     fomega <- foverlaps(dett,windowz,maxgap=0,type="within",nomatch=0)[,dd:=NULL][,dif:=(dup-dtf)*1000][,dif2:=(dup-dtf)*1000]
     flopintervals[,newmin:=flopmin*1000][,newmax:=flopmax*1000]
-#    setkey(flopintervals,newmin,newmax)
+    #    setkey(flopintervals,newmin,newmax)
     setkey(flopintervals,newmin,newmax)
     if (fomega[,.N]>0) {
-#      if (fomega[,.N]>250) { Sys.sleep(1)}
+      #      if (fomega[,.N]>250) { Sys.sleep(1)}
       setkey(fomega,dif,dif2)
-#      if (fomega[,.N]>250) { Sys.sleep(1)}
+      #      if (fomega[,.N]>250) { Sys.sleep(1)}
       windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]
       NAs<-windHits[is.na(intervals)]
       noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
@@ -213,7 +206,7 @@ dataFilter <- function(dat, filterthresh, counter){
       res <- rbind(res, dat[keep])
     }
     timer <- timer+1
-#    print(timer/length(u))
+    #    print(timer/length(u))
   }
   if (length(u)>0) close(timerbar)
   return(res)
@@ -239,13 +232,13 @@ cleanJST <- function(i, tags) {
   dat4$tdiff[dat4$crazy==0] <- NA
   dat5 <- dat4[,-14]
   dat5 <- dat5[dat5$tdiff>MULTIPATHWINDOW | is.na(dat5$tdiff),]
-#  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.dput"))
+  #  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.dput"))
   if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
   if (!DoFilterFromSavedCleanedData) {
     dat5<-as.data.table(dat5)
     filterData(dat5)
   }
-#  fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.fwri"))
+  #  fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.fwri"))
 }
 
 ###Clean realtime csv files
@@ -298,7 +291,7 @@ cleanRT <- function(...) {
     # names(dat)<- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW") #rename columns
     #  tags <- read.csv("./taglist/FriantTaglist.csv")
     dat<- dat[dat$Hex %in% tags$TagID_Hex, ]
-    dat$nPRI<- 10   # set nPRI (Nominal PRI) for the tag 
+    dat$nPRI<- 5   # set nPRI (Nominal PRI) for the tag 
     #combine the DT and FracSec columns into a single time column and convert to POSIXct
     # dat$dtf<- paste0(dat$DT, substring(dat$FracSec,2)) #paste the fractional seconds to the end of the DT in a new column
     dat$dtf<- as.POSIXct(dat$dtf, format = "%Y-%m-%d %H:%M:%OS") #tz="UTC" for realtime data. #convert to POSIXct beware this may change value of 0.0000X
@@ -406,7 +399,7 @@ cleanATS <- function() {
     dat5 <- dat4[,-14]
     dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
     itercount <<- itercount+1
-#    dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.dput"))
+    #    dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.dput"))
     if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
     if (!DoFilterFromSavedCleanedData) {
       dat5<-as.data.table(dat5)
@@ -449,8 +442,8 @@ cleanLotek <-function() {
     dat5 <- dat4[,-11]
     dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
     itercount <<- itercount+1
-#    dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.dput"))
-#    fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
+    #    dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.dput"))
+    #    fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
     if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
     if (!DoFilterFromSavedCleanedData) {
       dat5<-as.data.table(dat5)
@@ -477,21 +470,21 @@ filterData <- function(incomingData=NULL) {
     }
   }
   proces <- function(dat) {
-      myResults <- dataFilter(dat=dat, filterthresh=FILTERTHRESH, counter=1:12)
-      
-      #  rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in% 
-      #                      paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
-      setkey(dat,dtf)
-      setkey(myResults,dtf)
-      rejecteds <- dat[!myResults]
-      j<<- j+1
-      if (myResults[,.N]>0) {
-        recsn <- myResults[!is.na(RecSN)][1][,RecSN]
-      } else {
-        recsn <- rejecteds[!is.na(RecSN)][1][,RecSN]
-      }
-      write.csv(rejecteds, paste0("./rejected/", j, "_", recsn, "_rejected.csv"), row.names=F)
-      write.csv(myResults, paste0("./accepted/", j, "_", recsn, "_accepted.csv"), row.names=F)
+    myResults <- dataFilter(dat=dat, filterthresh=FILTERTHRESH, counter=1:12)
+    
+    #  rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in% 
+    #                      paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
+    setkey(dat,dtf)
+    setkey(myResults,dtf)
+    rejecteds <- dat[!myResults]
+    j<<- j+1
+    if (myResults[,.N]>0) {
+      recsn <- myResults[!is.na(RecSN)][1][,RecSN]
+    } else {
+      recsn <- rejecteds[!is.na(RecSN)][1][,RecSN]
+    }
+    write.csv(rejecteds, paste0("./rejected/", j, "_", recsn, "_rejected.csv"), row.names=F)
+    write.csv(myResults, paste0("./accepted/", j, "_", recsn, "_accepted.csv"), row.names=F)
   }
   if (is.null(incomingData)) loopFiles()
   else proces(dat=incomingData)
@@ -505,9 +498,16 @@ if (DoCleanJST) for(i in list.files("./jst")) {
   cleanJST(i, tags)
 }
 
+#if (DoCleanRT_CVP) {
+#  for (i in list.files("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/",pattern = "jsats_2017900[34]_JSATS_*", full.names = T)) {
+#    #    if (file.info(i)["isdir"]) next 
+#    cleanRT(i, tags)
+#  }
+#}
+
 if (DoCleanRT) {
-  for (i in list.files("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/",pattern = "jsats_2017900[34]_JSATS_*", full.names = T)) {
-#    if (file.info(i)["isdir"]) next 
+  for (i in list.files("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/",pattern = "jsats_2016901[38]_TEK_JSATS_*", full.names = T)) {
+    #    if (file.info(i)["isdir"]) next 
     cleanRT(i, tags)
   }
 }
@@ -516,7 +516,7 @@ if (DoCleanSUM) {
   fn<-cleanSUM()
   lf<-list.files("./raw2/",pattern="*.SUM", full.names=TRUE, include.dirs = FALSE)
   tf<-length(lf)
-#  tf<-sum.file.sizes(lf)
+  #  tf<-sum.file.sizes(lf)
   pb<-winProgressBar(title="Cleaning SUM files", label="file", min=0, max=tf, initial=0)
   j<-0
   for(i in lf){
@@ -564,7 +564,7 @@ if (DoCleanLotek) {
 # SN6034JST <- dget("./cleaned/2015-6034_cleaned.txt") #looks good to me
 
 ###Filtering Loop
-rm(tags)
+#rm(tags)
 if (DoFilterFromSavedCleanedData) {
   filterData()
 }

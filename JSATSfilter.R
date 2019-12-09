@@ -1,10 +1,10 @@
-# Version MP_TeknoFilter2.5.3.0_20180710.R
+# Version MP_TeknoFilter2.5.3.2_20180716.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-07-10 by Matt Pagel
-#                                  Version 2.5.2 (2.6 functions inactive)
+#                                   Last Updated: 2018-07-16 by Matt Pagel
+#                                  Version 2.5.3.2 (2.6 functions inactive)
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -22,20 +22,30 @@
 
 # daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
-setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+#setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+setwd("P:/TempSSD/Files for Matt")
 memory.limit(44000)
-# TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
 # 2017
 # vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
- vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
-DoCleanJST = FALSE
-DoCleanRT = FALSE
+vTAGFILENAME = cbind(TagFilename=c("2018 raw data/tag list/t2018TagInventory.csv","2018 raw data/tag list/qMultiAgencyTagList.csv","2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
+
 DoCleanPrePre = FALSE
+DoCleanRT = FALSE
 DoCleanShoreRT = FALSE
-DoCleanSUM = FALSE
-DoCleanATS = TRUE
+DoCleanJST = FALSE
+DoCleanSUM = TRUE
 DoCleanLotek = FALSE
+DoCleanATS = TRUE
+
+RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
+RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
+SSRT_Dir = "P:/Win8Usr/mpagel/Downloads/UC.Davis"
+NON_RT_Dir = "2018 Raw Data/data/"
+TEKNO_SUBDIR = "Tekno/" # or "" if not in a subdirectory of data directory
+ATS_SUBDIR = "ATS/" # or ""
+LOTEK_SUBDIR = "Lotek/cleaned with UCD tags/" # or ""
+
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
@@ -45,10 +55,7 @@ FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
 FLOPFACTOR_2.6 = 0.006 
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
 COUNTERMAX = 12 # PNNL spec: 12
-NON_RT_Dir = "raw/"
-RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
-RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
-SSRT_Dir = "P:/Win8Usr/mpagel/Downloads/UC.Davis"
+
 
 ###Install Load Function
 install.load <- function(package.name)
@@ -124,6 +131,13 @@ list.files.size <- function(path = getwd(), full.names=TRUE, nodotdot = TRUE, ig
 }
 sum.file.sizes <- function(DT) {
   return(unlist(DT[,.(x=sum(size))],use.names=F)[1])
+}
+
+extractSNfromFN <-function(i) {
+  # get it from the first number in the filename after the last \ / or ), spanning a dash if present
+  SN <- as.numeric(gsub("([A-Za-z 0-9/()-]*[/\\()]){0,1}([A-Za-z_]{0,20}|[()]){0,5}([0-9]{1,6})(-([0-9]{0,4})[0-9]{0,20})?[A-Za-z._-][^)\t\n-]*$", "\\3\\5", i))
+  if (is.null(SN) || is.na(SN) || !is.numeric(SN) || SN==9000) SN<-0
+  return(SN)
 }
 
 find_ePRI <- function(obj) {
@@ -302,7 +316,9 @@ filterData <- function(incomingData=NULL) {
   j <- 0
   loopFiles <- function() {
     for(i in list.files("./cleaned",full.names=TRUE)){
-      if (as.integer(file.info(i)["isdir"])) next
+      id<-as.logical(file.info(i)["isdir"])
+      if (is.null(id) || is.na(id)) id <- TRUE
+      if (id==TRUE) next
       # if it's a dput file, read it back in, but make sure there's no funky memory addresses that were saved by data.table
       if (endsWith(i,'.dput') || endsWith(i,'.txt')) datos <-as.data.table(dtget(i))
       if (endsWith(i,'.fwri')) { # if it was written to disk with fwrite, use the faster fread, but make sure to set the datetime stamps
@@ -325,8 +341,10 @@ filterData <- function(incomingData=NULL) {
     } else {
       recsn <- rejecteds[!is.na(RecSN)][1][,RecSN]
     }
-    write.csv(rejecteds, paste0("./rejected/", j, "_", recsn, "_rejected.csv"), row.names=F)
-    write.csv(myResults, paste0("./accepted/", j, "_", recsn, "_accepted.csv"), row.names=F)
+    # write.csv(rejecteds, paste0("./rejected/", j, "_", recsn, "_rejected.csv"), row.names=F)
+    # write.csv(myResults, paste0("./accepted/", j, "_", recsn, "_accepted.csv"), row.names=F)
+    fwrite(rejecteds, paste0("./rejected/", sprintf("%04d",j), "_", recsn, "_rejected.csv"))
+    fwrite(myResults, paste0("./accepted/", sprintf("%04d",j), "_", recsn, "_accepted.csv"))
   }
   if (is.null(incomingData)) loopFiles()
   else proces(dat=incomingData)
@@ -391,10 +409,17 @@ cleanLinesATS <- function(x) {
   return(elimNPCandDS(x))
 }
 
-lotekDateconvert <- function(x) {
-  return (as.POSIXct(round(x*60*60*24), # timestamps given in days since midnight first day of 1900
-                     origin = "1899-12-30", tz = "GMT") # correction for erroneous regard of 1900 as a leapyear
-  )
+# timestamps given in days since midnight first day of 1900, corrected for 1900 not being leapyear
+# converting a number to a POSIXct timestamp seems to assume the numbers are number of seconds from midnight GMT, regardless of specified timezone
+# so, first convert the number to a date text string without timezone, then read that in as if it's PST.
+lotekDateconvert <- function(x,tz="Etc/GMT+8") {
+  return (
+    as.POSIXct(
+      as.character(
+        as.POSIXct(round(x*60*60*24), origin = "1899-12-30", tz = "GMT"),
+        format="%Y-%m-%dT%H:%M:%OSZ", tz="GMT" 
+      ),format="%Y-%m-%dT%H:%M:%OSZ", tz=tz
+  ) )
 }
 
 cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL) { # for customized code (ATS)
@@ -411,7 +436,9 @@ cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=
     if (ts==0) next
     fn <- lfs[i,filename]
     rt <- rt+ts
-    if (as.integer(file.info(fn)["isdir"])) next
+    id <- as.logical(file.info(fn)["isdir"])
+    if (is.null(id) || is.na(id)) id <- TRUE
+    if (id==TRUE) next
     lab<-paste0(basename(fn),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
     setWinProgressBar(pb,rt,label=lab)
     functionCall(fn, tags)
@@ -423,6 +450,9 @@ cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=
 cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle,
                               headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
                               inferredHeader, Rec_dtf_Hex_strings, mergeFrac) {
+  if (grepl(pattern="LOTEK",precleanDir,ignore.case=TRUE)) {
+    filePattern = paste0("(*.CSV)|",filePattern)
+  }
   lfs<-list.files.size(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs=FALSE)
   # lf<-list.files(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs = FALSE)
   tf<-length(lfs[,filename]) # total files
@@ -436,7 +466,9 @@ cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbT
     if (ts==0) next
     fn <- lfs[i,filename]
     rt <- rt+ts
-    if (as.integer(file.info(fn)["isdir"])) next
+    id<-as.logical(file.info(fn)["isdir"])
+    if (is.null(id) || is.na(id)) id <- TRUE
+    if (id==TRUE) next
     lab<-paste0(basename(fn),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
     setWinProgressBar(pb,rt,label=lab)
     functionCall(i=fn, tags, headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
@@ -464,13 +496,13 @@ cleanInnerWrap <-function(...) {
     }
     if (nrow(dat)==0) return(F)
     if (is.na(Rec_dtf_Hex_strings[1]))  {
-      SN <- as.numeric(gsub("[a-zA-Z\\/]{0,255}([0-9]+).*$", "\\1", i)) # get it from the first number in the filename (please make sure not in raw file directory name)
+      SN <- extractSNfromFN(i)
       dat[,RecSN:=SN]
       Rec_dtf_Hex_strings[1]<-"RecSN"
     }
     setnames(dat,Rec_dtf_Hex_strings,c("RecSN","dtf","Hex")) 
     if (dtFormat=="EPOCH") {
-      dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf)),format="%Y-%m-%d %H:%M:%S")] # dat[,epdtf:=dtf][,dtf:=as.character(...
+      dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf),tz),format="%Y-%m-%d %H:%M:%S",tz=tz)] # dat[,epdtf:=dtf][,dtf:=as.character(...
 #      browser()
       dtFormat="%Y-%m-%d %H:%M:%OS"
     }
@@ -498,8 +530,11 @@ cleanInnerWrap <-function(...) {
     setkey(tags,TagID_Hex)
     dat2<-dat[tags,nomatch=0] # bring in the nominal PRI (nPRI)
     if (nrow(dat2)==0) {
-      print(unique(tags))
-      print(unique(dat))
+      print(paste0("no matching tag hits in raw file: ",i))
+      print(paste0("First tags file (",as.character(tags[,rel_group][1]),"). All tags regardless of file:"))
+      print(as.vector(unique(tags[,TagID_Hex]),mode="character"))
+      print("Data file tags")
+      print(as.vector(unique(dat[,Hex]),mode="character"))
       return(F)
     }
     setkey(dat2, RecSN, Hex, dtf)
@@ -522,12 +557,13 @@ cleanInnerWrap <-function(...) {
     rm(dat2)
     # I think "crazy" in Damien's original was just a check to see if matches previous tag, if not discard result of subtraction
     # Shouldn't be needed for data.table.
+    dat5[is.null(RecSN) || is.na(RecSN) || RecSN==9000 || RecSN=="" || RecSN==0,RecSN:=extractSNfromFN(i)]
     SNs<-unique(dat5[,RecSN])
     # browser()
     for(sn in SNs) { # don't trust the initial file to have only a single receiver in it
       itercount <<- itercount + 1
       # fwri format stores timestamps as UTC-based (yyyy-mm-ddTHH:MM:SS.microsZ)
-      if (DoSaveIntermediate) fwrite(dat5[RecSN==sn], file = paste0("./cleaned/", foutPrefix, itercount, "_", sn,  "_cleaned.fwri"))
+      if (DoSaveIntermediate) fwrite(dat5[RecSN==sn], file = paste0("./cleaned/", foutPrefix, sprintf("%04d",itercount), "_", sn,  "_cleaned.fwri"))
     }
     if (!DoFilterFromSavedCleanedData) filterData(dat5)
     rm(dat5)
@@ -535,32 +571,34 @@ cleanInnerWrap <-function(...) {
 }
 
 cleanATSxls <- function() { # just converts an excel file to a "csv" (with a bunch of header lines)
+  install.load('readxl')
   function(i, tags) {
-    install.load('readxl')
-    dat <- read_excel(i)                    #read in each file
     newfn <- paste0(i,".xtmp")
-    fwrite(dat,file=newfn)  # check for timezone shifts!
-    cleanATScsv()(newfn, tags)
-#    file.remove(newfn)
+    if (!file.exists(newfn)) {
+      dat <- read_excel(i)                    #read in each file
+      fwrite(dat,file=newfn)  # check for timezone shifts!
+    }
+    # cleanATScsv()(newfn, tags)
+    # file.remove(newfn)
   }
 }
 
 cleanATScsv <- function() { # have to figure out how to dovetail this with the other, more sane, files.
-  itercount <- 0 # TODO: Read in and immediately write out to CSV, then set params?
+  itercount <- 0
+  install.load('readr')
+  install.load('stringr')
+  functionCall<-cleanInnerWrap()
   function(i, tags) { # run the inner function of the enclosure
     # find serial number somewhere in the top 10 lines
-    install.load('readr')
-    install.load('stringr')
     SN<-NA
     headr <- read_lines(i,n_max=10)
     for (rw in 1:length(headr)) {
-      if (startsWith(headr[rw],"Serial Number: ")) {
-        SN<-as.numeric(gsub("Serial Number: ", "", headr[rw]))
+      if (startsWith(headr[rw],"Serial Number")) {
+        SN<-as.numeric(gsub("Serial Number: ([0-9]{1,8})[^\n\t]*", "\\1", headr[rw]))
         break
       }
     }
-    if (is.na(SN) || SN==9000) # 9000 is a placeholder in some files.
-    { SN<- as.numeric(gsub("[a-zA-Z_\\/]{0,20}([0-9]+).*$", "\\1", i))} # get it from the first number in the filename
+    if (is.null(SN) || is.na(SN) || SN==9000 || SN=="") SN <- extractSNfromFN(i) # 9000 is a placeholder in some files.
     rl<-read_lines(i) # readr
     gs<-lapply(rl,cleanLinesATS)
     p<-paste(Filter(isDataLine,gs),sep="\n",collapse="\n") # Filter(isDataLine,gs) or possibly gs[lapply(gs,isDataLine)]
@@ -580,9 +618,9 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
     inferredHeader = NULL
     Rec_dtf_Hex_strings = c("RecSN","dtf","Hex")
     mergeFrac = NULL
-    functionCall<-cleanInnerWrap()
     functionCall(i=newfn, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
     file.remove(newfn)
+    itercount <<- itercount + 1
   }
 }
 
@@ -656,7 +694,7 @@ if (DoCleanJST) {
   Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
   mergeFrac = "FracSec"
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,TEKNO_SUBDIR), filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -673,7 +711,7 @@ if (DoCleanSUM) {
   Rec_dtf_Hex_strings = c("Serial Number","Date Time","TagCode")
   mergeFrac = NULL
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,TEKNO_SUBDIR), filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -683,7 +721,7 @@ if (DoCleanSUM) {
 if (DoCleanLotek) {
   headerInFile = F
   leadingBlanks = 0
-  tz = "GMT"
+  tz = "Etc/GMT+8"
   dtFormat = "EPOCH"
   nacols = NULL
   foutPrefix = "LT"
@@ -691,7 +729,7 @@ if (DoCleanLotek) {
   Rec_dtf_Hex_strings = c(NA, "datetime", "Hex")
   mergeFrac = "FracSec"
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,LOTEK_SUBDIR), filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -700,10 +738,10 @@ if (DoCleanLotek) {
 # Last, do the files with less structure (needing customized code)
 # ATS autonomous
 if (DoCleanATS) {
+  fn<-cleanATSxls() # converts Excel files to a CSV-style file
+  cleanWrapper(fn, tags, precleanDir = paste0(NON_RT_Dir,ATS_SUBDIR), filePattern = "*.XLS[X]?$", wpbTitle = "Converting ATS XLS(x) files")
   fn<-cleanATScsv() # clean ATS CSVs
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.CSV$", wpbTitle = "Cleaning ATS CSV files")
-  fn<-cleanATSxls() # converts Excel files to a CSV-style file, then cleans
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.XLS[X]?$", wpbTitle = "Cleaning ATS XLS(x) files")
+  cleanWrapper(fn, tags, precleanDir = paste0(NON_RT_Dir,ATS_SUBDIR), filePattern = "(*.XTMP)|(*.CSV)|(*.ATS_CSV)$", wpbTitle = "Cleaning ATS CSV files")
 }
 
 ###Do the filtering loop

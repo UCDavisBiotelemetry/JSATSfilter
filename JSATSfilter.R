@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter2.5.2_20180709.R
+# Version MP_TeknoFilter2.5.3.0_20180710.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-07-09 by Matt Pagel
+#                                   Last Updated: 2018-07-10 by Matt Pagel
 #                                  Version 2.5.2 (2.6 functions inactive)
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
@@ -22,19 +22,19 @@
 
 # daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
-#setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 memory.limit(44000)
 # TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
 # 2017
 # vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-vTAGFILENAME = cbind(TagFilename=c("taglist/2018FriantTagList.csv"),PRI=c(5))
- DoCleanJST = FALSE
+ vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
+DoCleanJST = FALSE
 DoCleanRT = FALSE
 DoCleanPrePre = FALSE
 DoCleanShoreRT = FALSE
-DoCleanSUM = TRUE
-DoCleanATS = FALSE
+DoCleanSUM = FALSE
+DoCleanATS = TRUE
 DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
@@ -57,13 +57,6 @@ install.load <- function(package.name)
   library(package.name, character.only=T)
 }
 
-# if R version < 3.4.0, install hasName - commented out as it's not currently needed
-# bVersionGood = FALSE
-# vMaj = as.numeric(R.version["major"])
-# vMin = as.numeric(R.version["minor"])
-# if ( (vMaj > 3) +  ((vMaj == 3) * (vMin>=4.0)) > 0) bVersionGood=TRUE
-# if (!bVersionGood) hasName <- function(x, name) match(names(x), name, nomatch = 0L) > 0L
-
 install.load('tidyverse')
 install.load('lubridate')
 install.load('data.table')
@@ -78,44 +71,6 @@ install.load('data.table')
 # dat <- read.csv(i, header=T, colClasses=classes)
 # names(dat) # SQSQueue,SQSMessageID,ReceiverID,DLOrder,DetectionDate,TagID,TxAmplitude,TxOffset,TxNBW
 # names(dat) <- c("SQSQueue","SQSMessageID","RecSN","DLOrder","dtf","Hex","TxAmplitude","TxOffset","TxNBW")
-
-# install.load('readxl') # added where needed (only ATS XLSx
-# install.load('readr') # added where needed (only ATS files - CSV and XLS)
-# install.load('stringr') # added where needed (only ATS files)
-
-# 
-# # https://math.stackexchange.com/questions/914288/how-to-find-the-approximate-basic-period-or-gcd-of-a-list-of-numbers
-# # https://math.stackexchange.com/questions/1834472/approximate-greatest-common-divisor/2523521
-# This seems more memory-intensive than the "normal" way.
-# mean_xy <-function(factor, values) {
-#   setDT(values)
-#   values[,xs:=cos(2*pi*v/factor)][,ys:=sin(2*pi*v/factor)]
-#   return (c(sum(values[xs/.N]),sum(values[ys/.N])))
-# }
-# 
-# calculatePeriodAppeal <- function (factor, values) {
-#   m = mean_xy(factor, values)
-#   return(sqrt(m[1]*m[1]+m[2]*m[2]))
-# }
-# 
-# # calculateBestLinear <- function(factor, values) {
-# #  mx = mean_x(factor, values).n()
-# #  my = mean_y(factor, values).n()
-# #  y0 = factor*atan2(my,mx)/(2*pi).n()
-# #  err = 1-sqrt(mx^2+my^2).n()
-# #  return [factor*x + y0, err]
-# # }
-# calculateGCDAppeal <- function(factor, values) {
-#   m = mean_xy(factor, values)
-#   return(1 - sqrt((m[1]-1)^2+m[2]^2)/2)
-# }
-# 
-# testvalues<-data.table(v=c(5.01,9.95,15.02,34.82,59.22))
-# strt <- round(0.651*5*100)
-# fin <- round(1.3*5*100)
-# testfact <- data.table(factor=(strt:fin)/100)
-# 
-# testfact[,gcd:=calculateGCDAppeal(factor,list(5.01,9.95,15.02,34.82,59.22))]
 
 # Set up custom code for going back and forth with data table and data frame read/write files
 data.table.parse<-function (file = "", n = NULL, text = NULL, prompt = "?", keep.source = getOption("keep.source"), 
@@ -215,7 +170,7 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
     setkey(flopintervals,newmin,newmax)
     if (fomega[,.N]>0) {
       setkey(fomega,dif,dif2)
-      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]
+      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x,ePRI)]
       NAs<-windHits[is.na(intervals)]
       noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
       noOnlyFirst<-noNAs[c>1]
@@ -225,12 +180,12 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
       onlyFirst[,isAccepted:=FALSE][,c:=0]
       LT<-rbind(noOnlyFirst,NAs,onlyFirst)
       setkey(LT,firstHit,hit)
-      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c)]
+      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c, ePRI)]
     } else {
-      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
     }
   } else {
-    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
   }
   return(logTable)
 }
@@ -276,7 +231,7 @@ magicFunc <- function(dat, tagHex, countermax, filterthresh){
     setkey(flopintervals,newmin,newmax)
     if (fomega[,.N]>0) {
       setkey(fomega,dif,dif2)
-      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]
+      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x,ePRI)]
       NAs<-windHits[is.na(intervals)]
       noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
       noOnlyFirst<-noNAs[c>1]
@@ -286,12 +241,12 @@ magicFunc <- function(dat, tagHex, countermax, filterthresh){
       onlyFirst[,isAccepted:=FALSE][,c:=0]
       LT<-rbind(noOnlyFirst,NAs,onlyFirst)
       setkey(LT,firstHit,hit)
-      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c)]
+      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c, ePRI)]
     } else {
-      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
     }
   } else {
-    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0)
+    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
   }
   return(logTable)
 }
@@ -333,91 +288,13 @@ dataFilter <- function(dat, filterthresh, countermax){
         keep<-as.data.table(unique(ans2[,hit]))
         setkey(dat,dtf)
         setkey(keep,x)
-        res <- rbind(res, dat[keep])
+        res <- rbind(res, dat[keep,nomatch=0])
       }
       timer <- timer+1
     }
     close(timerbar)
   }
   return(res)
-}
-
-cleanATSxls <- function() { # just converts an excel file to a "csv" (with a bunch of header lines)
-  function(i, tags) {
-    install.load('readxl')
-    dat <- read_excel(i)                    #read in each file
-    newfn <- paste0(i,".xtmp")
-    fwrite(dat,file=newfn)
-    cleanATScsv(newfn, tags)
-    file.remove(newfn)
-  }
-}
-
-trimcomma <- function(x) { if (endsWith(trimws(x),",")) {return(substr(x,1,nchar(trimws(x))-1))} else {return(trimws(x))} }
-
-isDataLine <- function(x) { # non-header
-  a<-as.character(x)
-  if (is.null(a) || length(a)==0) return(FALSE) # NULL check
-  if (nchar(a)==0) return(FALSE) # empty string check
-  if (str_count(a,",")<5) return(FALSE) # are there too few fields to actually be data?
-  return (!grepl("SiteName",a,fixed = T)) # is it a header line
-}
-
-elimNPCandDS <- function(x) {# NPC = nonprinting characters; DS = double-space
-    return(gsub("  ", "",gsub("[^[:alnum:] :.,|?&/\\\n-]", "",x)))
-}
-
-cleanLinesATS <- function(x) {
-#    a<-elimNPCandDS(x)
-#    if (nchar(a)>0) return(trimcomma(a)) else return(a) # commented out to consistently return 13 columns
-    return(elimNPCandDS(x))
-}
-
-cleanATScsv <- function() { # have to figure out how to dovetail this with the other, more sane, files.
-  itercount <- 0 # TODO: Read in and immediately write out to CSV, then set params?
-  function(i, tags) { # run the inner function of the enclosure
-    # find serial number somewhere in the top 10 lines
-    install.load('readr')
-    install.load('stringr')
-    SN<-NA
-    headr <- read_lines(i,n_max=10)
-    for (rw in 1:length(headr)) {
-      if (startsWith(headr[rw],"Serial Number: ")) {
-        SN<-as.numeric(gsub("Serial Number: ", "", headr[rw]))
-        break
-      }
-    }
-    if (is.na(SN) || SN==9000) # 9000 is a placeholder in some files.
-      { SN<- as.numeric(gsub("[a-zA-Z\\/]{0,20}([0-9]+).*$", "\\1", i))} # get it from the first number in the filename
-    rl<-read_lines(i) # readr
-    gs<-lapply(rl,cleanLinesATS)
-    p<-paste(Filter(isDataLine,gs),sep="\n",collapse="\n") # Filter(isDataLine,gs) or possibly gs[lapply(gs,isDataLine)]
-    dat<-fread(p,blank.lines.skip=TRUE,strip.white=TRUE,na.strings=c("NA","NULL","Null","null","nan","-nan","N/A","","-")) # ,skip="SiteName",
-    headers <- c("Internal", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-                 "BitPeriod", "Thresh","Detection")                        #make vector of new headers
-    setnames(dat,headers)
-    dat[,RecSN:=SN]   # add SN column 
-    newfn <- paste0(i,".ctmp")
-    fwrite(dat,newfn)
-    headerInFile = T
-    leadingBlanks = 0
-    tz = "Etc/GMT+8"
-    dtFormat = "%m/%d/%Y %H:%M:%OS"
-    nacols = NULL # if this column is null, the row gets cut from the data set. c("Detection","Pres")
-    foutPrefix = "ATS"
-    inferredHeader = NULL
-    Rec_dtf_Hex_strings = c("RecSN","dtf","Hex")
-    mergeFrac = NULL
-    functionCall<-cleanInnerWrap()
-    functionCall(i=newfn, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-    file.remove(newfn)
-  }
-}
-
-lotekDateconvert <- function(x) {
-  return (as.POSIXct(round(x*60*60*24), # timestamps given in days since midnight first day of 1900
-                     origin = "1899-12-30", tz = "GMT") # correction for erroneous regard of 1900 as a leapyear
-  )
 }
 
 ##filter Loop
@@ -440,6 +317,8 @@ filterData <- function(incomingData=NULL) {
     setkey(dat,dtf) # TODO 20180313: we should probably put TagID_Hex and RecSN in the key also
     setkey(myResults,dtf)
     rejecteds <- dat[!myResults]
+    myResults[,tt:=strftime(dtf,tz="Etc/GMT+8",format="%Y-%m-%d %H:%M:%S")][,FracSec:=round(as.double(difftime(dtf,tt,tz="Etc/GMT+8",units="secs")),6)][,dtf:=as.character(tt)][,tt:=NULL]
+    rejecteds[,tt:=strftime(dtf,tz="Etc/GMT+8",format="%Y-%m-%d %H:%M:%S")][,FracSec:=round(as.double(difftime(dtf,tt,tz="Etc/GMT+8",units="secs")),6)][,dtf:=as.character(tt)][,tt:=NULL]
     j <<- j+1
     if (myResults[,.N]>0) {
       recsn <- myResults[!is.na(RecSN)][1][,RecSN]
@@ -460,6 +339,7 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
   ret <- data.frame(TagID_Hex=character(),nPRI=numeric(),rel_group=character())
   for (i in 1:nrow(vTagFileNames)) {
     fn = vTagFileNames[i,"TagFilename"]
+    if (!file.exists(fn)) { next }
     pv = vTagFileNames[i, "PRI"]
     tags<- fread(fn, header=T, stringsAsFactors=FALSE) #list of known Tag IDs #colClasses="character", 
     heads = names(tags)
@@ -467,14 +347,13 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
     pcn = priColName[which(priColName %in% heads)[1]] # prioritize the first in priority list
     gcn = grpColName[which(grpColName %in% heads)[1]]
     if (is.null(pcn) || is.na(pcn) || length(pcn)<1 || pcn=="NA") pcn = NULL
-    if (is.null(gcn) || is.na(gcn) || length(gcn)<1 ) gcn = NULL
-    #if (pcn == "NA") pcn = NULL
+    if (is.null(gcn) || is.na(gcn) || length(gcn)<1 || gcn=="NA") gcn = NULL
     tags <- tags[,c(tcn,pcn,gcn),with=F]
-    if (is.null(pcn) || length(pcn)<1) {
+    if (is.null(pcn)) {
       tags[,nPRI:=as.numeric(pv)]
       pcn = "nPRI"
     }
-    if (is.null(gcn) || length(gcn)<1) {
+    if (is.null(gcn)) {
       fn<-as.character(basename(fn))
       tags[,rel_group:=fn]
       gcn = "rel_group"
@@ -490,6 +369,32 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
   setDT(ret,key="TagID_Hex")
   ret[,TagID_Hex:=as.character(TagID_Hex)] # drop factors
   return(ret)
+}
+
+trimcomma <- function(x) { if (endsWith(trimws(x),",")) {return(substr(x,1,nchar(trimws(x))-1))} else {return(trimws(x))} }
+
+isDataLine <- function(x) { # non-header
+  a<-as.character(x)
+  if (is.null(a) || length(a)==0) return(FALSE) # NULL check
+  if (nchar(a)==0) return(FALSE) # empty string check
+  if (str_count(a,",")<5) return(FALSE) # are there too few fields to actually be data?
+  return (!grepl("SiteName",a,fixed = T)) # is it a header line
+}
+
+elimNPCandDS <- function(x) {# NPC = nonprinting characters; DS = double-space
+  return(gsub("  ", "",gsub("[^[:alnum:] :.,|?&/\\\n-]", "",x)))
+}
+
+cleanLinesATS <- function(x) {
+  #    a<-elimNPCandDS(x)
+  #    if (nchar(a)>0) return(trimcomma(a)) else return(a) # commented out to consistently return 13 columns
+  return(elimNPCandDS(x))
+}
+
+lotekDateconvert <- function(x) {
+  return (as.POSIXct(round(x*60*60*24), # timestamps given in days since midnight first day of 1900
+                     origin = "1899-12-30", tz = "GMT") # correction for erroneous regard of 1900 as a leapyear
+  )
 }
 
 cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL) { # for customized code (ATS)
@@ -629,6 +534,58 @@ cleanInnerWrap <-function(...) {
   }
 }
 
+cleanATSxls <- function() { # just converts an excel file to a "csv" (with a bunch of header lines)
+  function(i, tags) {
+    install.load('readxl')
+    dat <- read_excel(i)                    #read in each file
+    newfn <- paste0(i,".xtmp")
+    fwrite(dat,file=newfn)  # check for timezone shifts!
+    cleanATScsv()(newfn, tags)
+#    file.remove(newfn)
+  }
+}
+
+cleanATScsv <- function() { # have to figure out how to dovetail this with the other, more sane, files.
+  itercount <- 0 # TODO: Read in and immediately write out to CSV, then set params?
+  function(i, tags) { # run the inner function of the enclosure
+    # find serial number somewhere in the top 10 lines
+    install.load('readr')
+    install.load('stringr')
+    SN<-NA
+    headr <- read_lines(i,n_max=10)
+    for (rw in 1:length(headr)) {
+      if (startsWith(headr[rw],"Serial Number: ")) {
+        SN<-as.numeric(gsub("Serial Number: ", "", headr[rw]))
+        break
+      }
+    }
+    if (is.na(SN) || SN==9000) # 9000 is a placeholder in some files.
+    { SN<- as.numeric(gsub("[a-zA-Z_\\/]{0,20}([0-9]+).*$", "\\1", i))} # get it from the first number in the filename
+    rl<-read_lines(i) # readr
+    gs<-lapply(rl,cleanLinesATS)
+    p<-paste(Filter(isDataLine,gs),sep="\n",collapse="\n") # Filter(isDataLine,gs) or possibly gs[lapply(gs,isDataLine)]
+    dat<-fread(p,blank.lines.skip=TRUE,strip.white=TRUE,na.strings=c("NA","NULL","Null","null","nan","-nan","N/A","","-")) # ,skip="SiteName",
+    headers <- c("Internal", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
+                 "BitPeriod", "Thresh","Detection")                        #make vector of new headers
+    setnames(dat,headers)
+    dat[,RecSN:=SN]   # add SN column 
+    newfn <- paste0(i,".ctmp")
+    fwrite(dat,newfn)
+    headerInFile = T
+    leadingBlanks = 0
+    tz = "Etc/GMT+8"
+    dtFormat = "%m/%d/%Y %H:%M:%OS"
+    nacols = NULL # if this column is null, the row gets cut from the data set. c("Detection","Pres")
+    foutPrefix = "ATS"
+    inferredHeader = NULL
+    Rec_dtf_Hex_strings = c("RecSN","dtf","Hex")
+    mergeFrac = NULL
+    functionCall<-cleanInnerWrap()
+    functionCall(i=newfn, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+    file.remove(newfn)
+  }
+}
+
 ###load taglist
 # tags<- read.csv(TAGFILENAME, header=T, colClasses="character") # single tag list file. Superseeded.
 tags<-readTags(vTAGFILENAME)
@@ -743,63 +700,11 @@ if (DoCleanLotek) {
 # Last, do the files with less structure (needing customized code)
 # ATS autonomous
 if (DoCleanATS) {
-  fn<-cleanATSxls() # converts Excel files to a CSV-style file, then cleans
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.XLS?$", wpbTitle = "Cleaning ATS XLS(x) files")
   fn<-cleanATScsv() # clean ATS CSVs
   cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.CSV$", wpbTitle = "Cleaning ATS CSV files")
+  fn<-cleanATSxls() # converts Excel files to a CSV-style file, then cleans
+  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.XLS[X]?$", wpbTitle = "Cleaning ATS XLS(x) files")
 }
-
-### Old cleaning loop for ATS receiver files
-# cleanATSxls <- function() { # have to figure out how to dovetail this with the non-xlses.  Read in and immediately write out to CSV, then set params?
-#     itercount <- 0
-#     function(i, tags) {
-#       dat <- read_excel(i)                    #read in each file
-#       SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
-#       if(is.na(SN) == TRUE) {
-#         SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
-#       }
-#       print(SN)
-#       find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
-#       # the value 100 below can be set to anything, it just needs to be less that the total number of detections in the file
-#       start <- max(find.na[find.na <= 100])                      
-#       dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
-#       
-#       headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-#                    "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
-#       names(dat) <- headers 
-#       # rename with the right headers
-#       extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
-#       mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
-#       names(mat) <- extracols
-#       dat <- cbind(dat, mat)
-#       dat$Hex <- substr(dat$Hex, 4, 7)                           #deal with the TagCode situation
-#       dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
-#       dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
-#       print(dat)
-#       dat <- as.tbl(dat)                                         #change object format to tbl 
-#       dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
-#       dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
-#       # to be set to something different for tags with a PRI other than 5)
-#       dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 
-#                            tz="Etc/GMT+8")                       #convert to POSIXct note: fractional seconds will no longer print, but 
-#       # they are there. Run the next line to verify that you haven't lost your 
-#       # frac seconds
-#       # (strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-#       dat2 <- dat
-#       dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
-#       dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )))   #calculate tdiff, then remove multipath
-#       dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-#       dat4$tdiff[dat4$crazy==0] <- NA
-#       dat5 <- dat4[,-14]
-#       dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-#       itercount <<- itercount+1
-#       if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
-#       if (!DoFilterFromSavedCleanedData) {
-#         dat5<-as.data.table(dat5)
-#         filterData(dat5)
-#       }
-#     }
-# }
 
 ###Do the filtering loop
 if (DoFilterFromSavedCleanedData) {

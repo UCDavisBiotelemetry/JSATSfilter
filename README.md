@@ -6,6 +6,8 @@ An attempt to make a repo of any code versions of "teknofilter" we can dig up.
 JSATS filtering algorithm: data.frame version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.
 Primary author is Gabriel Singer, with some early code written by Damien Caillaud
 
+------------------
+
 Version 2.3.2 (Matt Pagel version author)	2018-09-25
 * Slight modification to PRI interval determination + cutoffs 
 

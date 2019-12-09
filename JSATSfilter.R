@@ -1,10 +1,10 @@
-# Version MP_TeknoFilter2.5.1.3_20180621_ATScsv.R
+# Version MP_TeknoFilter2.5.1.4_20180625.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 06/21/2018 by Matt Pagel
-#                                           "Version" 2.5.1.3
+#                                   Last Updated: 2018-06-25 by Matt Pagel
+#                                           "Version" 2.5.1.4
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -21,16 +21,21 @@
 # See also TODOs in-line
 setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 # TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
+# 2017
+vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
+# 2018
 vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
 DoCleanJST = FALSE
 DoCleanRT = FALSE
 DoCleanPrePre = FALSE
 DoCleanShoreRT = FALSE
 DoCleanSUM = FALSE
-DoCleanATS = TRUE
-DoCleanLotek = FALSE
+DoCleanATS = FALSE
+DoCleanLotek = TRUE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
+
+# Algorithm constants.
 FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
 FLOPFACTOR = 0.155 # PNNL spec: 0.006. Arnold: .04*5 = 0.2
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
@@ -47,38 +52,33 @@ install.load <- function(package.name)
   library(package.name, character.only=T)
 }
 
-install.load('tidyverse')
-install.load('readxl')
-install.load('lubridate')
-install.load('data.table')
-install.load('readr')
-install.load('stringr')
-
-mode <- function(x, i) {
-  ta <- table(x)
-  tam <- max(ta)
-  if (all(ta == tam)) mod <- NA
-  else if(is.numeric(x)) mod <- as.numeric(names(ta)[ta == tam])
-  else mod <- names(ta)[ta == tam]
-  return(mod)
-}
-
-getmode <- function(v) {
-  uniqv <- sort(unique(v))
-  print(uniqv)
-  print(match(v,uniqv))
-  print(tabulate(match(v,uniqv)))
-  uniqv[which.max(tabulate(match(v, uniqv)))]
-  return(uniqv)
-}
-
-# if version < 3.4.0, install hasName - commented out as it's not currently needed
+# if R version < 3.4.0, install hasName - commented out as it's not currently needed
 # bVersionGood = FALSE
 # vMaj = as.numeric(R.version["major"])
 # vMin = as.numeric(R.version["minor"])
 # if ( (vMaj > 3) +  ((vMaj == 3) * (vMin>=4.0)) > 0) bVersionGood=TRUE
 # if (!bVersionGood) hasName <- function(x, name) match(names(x), name, nomatch = 0L) > 0L
 
+install.load('tidyverse')
+install.load('lubridate')
+install.load('data.table')
+
+# if using read.csv rather than fread (data.table), you'll want to 
+#   1. read a few entries from each column first
+#   2. set the data type accordingly and 
+#   3. re-set to character if it's picky
+# dathead <- read.csv(i, header=T, nrows=10)
+# classes<-sapply(dathead, class)
+# classes[names(unlist(list(classes[which(classes %in% c("factor","numeric"))],classes[names(classes) %in% c("time","date","dtf")])))] <- "character"
+# dat <- read.csv(i, header=T, colClasses=classes)
+# names(dat) # SQSQueue,SQSMessageID,ReceiverID,DLOrder,DetectionDate,TagID,TxAmplitude,TxOffset,TxNBW
+# names(dat) <- c("SQSQueue","SQSMessageID","RecSN","DLOrder","dtf","Hex","TxAmplitude","TxOffset","TxNBW")
+
+# install.load('readxl') # added where needed (only ATS XLSx
+# install.load('readr') # added where needed (only ATS files - CSV and XLS)
+# install.load('stringr') # added where needed (only ATS files)
+
+# Set up custom code for going back and forth with data table and data frame read/write files
 data.table.parse<-function (file = "", n = NULL, text = NULL, prompt = "?", keep.source = getOption("keep.source"), 
                             srcfile = NULL, encoding = "unknown") { # needed for dput data.tables (rather than data.frames)
   keep.source <- isTRUE(keep.source)
@@ -116,23 +116,23 @@ data.table.parse<-function (file = "", n = NULL, text = NULL, prompt = "?", keep
       }
     }
   }
-  #  text <- gsub("(, .internal.selfref = <pointer: 0x[0-9A-F]+>)","",text)
   .Internal(parse(file, n, text, prompt, srcfile, encoding))
 }
 data.table.get <- function(file, keep.source = FALSE)
   eval(data.table.parse(file = file, keep.source = keep.source))
 dtget <- data.table.get
 
+# set up functions for calculating size of folders for progress bars
 list.files.size <- function(path = getwd(), full.names=TRUE, nodotdot = TRUE, ignore.case = TRUE, include.dirs = FALSE, ...) { 
   filelist <- data.table(filename=list.files(path=path, full.names=full.names, no.. = nodotdot, ignore.case = ignore.case, include.dirs = include.dirs, ...))
   filelist[,size:=file.size(filename)][,tot:=sum.file.sizes(filelist)][,perc:=size/tot]
   return(filelist)
 }
-
 sum.file.sizes <- function(DT) {
   return(unlist(DT[,.(x=sum(size))],use.names=F)[1])
 }
 
+# filter out multipath, filter windowed hits crudely
 magicFunc <- function(dat, tagHex, countermax, filterthresh){
   setkey(dat,Hex)
   tagdet <- dat[Hex==tagHex]
@@ -192,6 +192,7 @@ magicFunc <- function(dat, tagHex, countermax, filterthresh){
   return(logTable)
 }
 
+# filter windowed hits to verify which hits are in which windows
 dataFilter <- function(dat, filterthresh, countermax){
   res <- dat[1==0] # copies structure
   timer <- 0
@@ -217,149 +218,44 @@ dataFilter <- function(dat, filterthresh, countermax){
   }
   return(res)
 }
-# (i, tags, headerInFile, leadingBlanks, tz="GMT", dtFormat="%Y-%m-%d %H:%M:%OS", nacols=c("Detections"), foutPrefix, inferredHeader, Rec_dtf_Hex_strings=c("ReceiverID","DetectionDate","TagID"), mergeFrac="FracSec")
-# top line e.g SM1180711252,SM1,03/13/2018 08:51:48,.115450,FF13,5E,1,19366,82
-#              filename,locname,                dtf,fracsec,TagID,CRC,Valid,SigStr,nbw
 
-###Cleaning .jst files
-cleanJST <- function(...) {
-  itercount <- 0
+cleanATSxls <- function() { # just converts an excel file to a "csv" (with a bunch of header lines)
   function(i, tags) {
-    headerInFile = F
-    leadingBlanks = 0
-    tz = "Etc/GMT+8"
-    dtFormat = "%m/%d/%Y %H:%M:%OS"
-    nacols = NULL
-    foutPrefix = "JT"
-    inferredHeader = c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
-    Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
-    mergeFrac = "FracSec"
-    cleanInnerWrap(i=i, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+    install.load('readxl')
+    dat <- read_excel(i)                    #read in each file
+    newfn <- paste0(i,".xtmp")
+    fwrite(dat,file=newfn)
+    cleanATScsv(newfn, tags)
+    file.remove(newfn)
   }
 }
 
-
-###Clean realtime csv files
-cleanRT_pre_preprocess <- function(...) { # no headers in these files
-  itercount <- 0
-  function(i, tags) {
-    headerInFile = F
-    leadingBlanks = 0
-    tz = "GMT"
-    dtFormat = "%Y-%m-%d %H:%M:%OS"
-    nacols = NULL
-    foutPrefix = "RT_npp"
-    inferredHeader = c("SQSQueue","SQSMessageID","RecSN","DLOrder","DateTime","microsecs","Hex","TxAmplitude","TxOffset","TxNBW","TxCRC")
-    Rec_dtf_Hex_strings = c("RecSN", "DateTime", "Hex")
-    mergeFrac = "microsecs"
-    cleanInnerWrap(i=i, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  }
-}
-
-# if using read.csv rather than fread, you'll want to 
-#   1. read a bit from each column first
-#   2. set the data type accordingly and 
-#   3. re-set to character if it's picky
-# dathead <- read.csv(i, header=T, nrows=10)
-# classes<-sapply(dathead, class)
-# classes[names(unlist(list(classes[which(classes %in% c("factor","numeric"))],classes[names(classes) %in% c("time","date","dtf")])))] <- "character"
-# dat <- read.csv(i, header=T, colClasses=classes)
-# names(dat) # SQSQueue,SQSMessageID,ReceiverID,DLOrder,DetectionDate,TagID,TxAmplitude,TxOffset,TxNBW
-# names(dat) <- c("SQSQueue","SQSMessageID","RecSN","DLOrder","dtf","Hex","TxAmplitude","TxOffset","TxNBW")
-
-cleanRT <- function(...) { # timestamps in stream are UTC, not PST
-  itercount <- 0
-  function(i, tags) {
-    headerInFile = T
-    leadingBlanks = 0
-    tz = "GMT"
-    dtFormat = "%Y-%m-%d %H:%M:%OS"
-    nacols = NULL
-    foutPrefix = "RT"
-    inferredHeader = NULL
-    Rec_dtf_Hex_strings = c("ReceiverID","DetectionDate","TagID")
-    mergeFrac = NULL
-    cleanInnerWrap(i=i, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  }
-}
-
-
-###Cleaning .SUM files
-cleanSUM <- function() { #set up enclosure
-  itercount <- 0
-  function(i, tags) {
-    headerInFile = T
-    leadingBlanks = 8
-    tz = "Etc/GMT+8"
-    dtFormat = "%m/%d/%Y %H:%M:%OS"
-    nacols = c("Detection")
-    foutPrefix = "SUM"
-    inferredHeader = NULL
-    # Detection,Serial Number,Date Time,TagCode,Tilt,vBatt,Temp,Pressure,Amp,Freq,Thresh,nbw,snr,valid
-    Rec_dtf_Hex_strings = c("Serial Number","Date Time","TagCode")
-    mergeFrac = NULL
-    cleanInnerWrap(i=i, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  }
-}
 trimcomma <- function(x) { if (endsWith(trimws(x),",")) {return(substr(x,1,nchar(trimws(x))-1))} else {return(trimws(x))} }
 
-###Cleaning loop for ATS receiver files
-cleanATSxls <- function() { # have to figure out how to dovetail this with the non-xlses.  Read in and immediately write out to CSV, then set params?
-    itercount <- 0
-    function(i, tags) {
-      dat <- read_excel(i)                    #read in each file
-      SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
-      if(is.na(SN) == TRUE) {
-        SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
-      }
-      print(SN)
-      find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
-      # the value 100 below can be set to anything, it just needs to be less that the total number of detections in the file
-      start <- max(find.na[find.na <= 100])                      
-      dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
-      
-      headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-                   "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
-      names(dat) <- headers 
-      # rename with the right headers
-      extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
-      mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
-      names(mat) <- extracols
-      dat <- cbind(dat, mat)
-      dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
-      dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
-      dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
-      print(dat)
-      dat <- as.tbl(dat)                                         #change object format to tbl 
-      dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
-      dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
-      # to be set to something different for tags with a PRI other than 5)
-      dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 
-                           tz="Etc/GMT+8")                       #convert to POSIXct note: fractional seconds will no longer print, but 
-      # they are there. Run the next line to verify that you haven't lost your 
-      # frac seconds
-      # (strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-      dat2 <- dat
-      dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
-      dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )))   #calculate tdiff, then remove multipath
-      dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-      dat4$tdiff[dat4$crazy==0] <- NA
-      dat5 <- dat4[,-14]
-      dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-      itercount <<- itercount+1
-      if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
-      if (!DoFilterFromSavedCleanedData) {
-        dat5<-as.data.table(dat5)
-        filterData(dat5)
-      }
-    }
+isDataLine <- function(x) { # non-header
+  a<-as.character(x)
+  if (is.null(a) || length(a)==0) return(FALSE) # NULL check
+  if (nchar(a)==0) return(FALSE) # empty string check
+  if (str_count(a,",")<5) return(FALSE) # are there too few fields to actually be data?
+  return (!grepl("SiteName",a,fixed = T)) # is it a header line
 }
 
+elimNPCandDS <- function(x) {# NPC = nonprinting characters; DS = double-space
+    return(gsub("  ", "",gsub("[^[:alnum:] :.,|?&/\\\n-]", "",x)))
+}
+
+cleanLinesATS <- function(x) {
+#    a<-elimNPCandDS(x)
+#    if (nchar(a)>0) return(trimcomma(a)) else return(a) # commented out to consistently return 13 columns
+    return(elimNPCandDS(x))
+}
 
 cleanATScsv <- function() { # have to figure out how to dovetail this with the other, more sane, files.
   itercount <- 0 # TODO: Read in and immediately write out to CSV, then set params?
   function(i, tags) { # run the inner function of the enclosure
-    # find serial number
+    # find serial number somewhere in the top 10 lines
+    install.load('readr')
+    install.load('stringr')
     headr <- read_lines(i,n_max=10)
     for (rw in 1:length(headr)) {
       if (startsWith(headr[rw],"Serial Number: ")) {
@@ -368,96 +264,36 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
       }
     }
     if (is_null(SN) | SN==9000) # 9000 is a placeholder in some files.
-      { SN<- as.numeric(gsub("[a-zA-Z\\/]{0,10}([0-9]+).*$", "\\1", i))} # get it from filename
-#### Prep for data.frame/data.table; slightly more understandable version
-    # rl<-read_lines(i) # read in all lines as pure text
-    # gs<-gsub("[^[:alnum:] :.,|?&/\\\n-]", "",rl)
-    # gs2<-gsub("  ", "",gs)
-    # gs3<-gs2[lapply(gs2,nchar)>1L]
-    # gs4<-gs3[lapply(gs3,str_count,",")>5] # only keep those with a significant number of commas. There should be 12 or 13 to start with.
-    # gs5<-lapply(gs4,trimcomma) # get rid of terminal ", " because there is no matching header for that column
-    # p<-paste(gs5,sep="\n",collapse="\n")
-#### end more understandable section...next 3 code lines encompass these 7 and do away with some huge memory costs
-    gs2<-gsub("  ", "",gsub("[^[:alnum:] :.,|?&/\\\n-]", "",read_lines(i)))
-    # only keep those with a significant number of commas. There should be 12 or 13 to start with. get rid of terminal ", " because there is no matching header for that column
-    gs5<-lapply(gs2[lapply(gs2,nchar)>1L & lapply(gs2,str_count,",")>5],trimcomma)
-    p<-paste(gs5,sep="\n",collapse="\n")
-    dat<-fread(p,blank.lines.skip=TRUE,strip.white=TRUE,data.table=FALSE) # setDF(dat) # ,skip="SiteName",
-    # print(SN)
-    # find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1...not used anywhere though.
-    headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-                 "BitPeriod", "Thresh")                        #make vector of new headers
-    names(dat) <- headers 
-    extracols <- c("Detection","Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON") # don't know if we really need this
-    mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
-    names(mat) <- extracols
-    dat <- cbind(dat, mat)
-    dat$Hex <- substr(dat$Hex, 4, 7)  # deal with the TagCode situation. corrected 2018-06-20
-    dat$RecSN <- rep(SN, nrow(dat))   # add SN column 
-    dat <- dat[ ,5:(ncol(dat))]       # drop the filename and site name columns
-    dat <- as.tbl(dat)                # change object format to tbl 
-    dat<- dat[dat$Hex %in% tags$TagID_Hex, ]  # filter receiver file by known taglist
-    dat$nPRI<- 5  #set nPRI (Nominal PRI) for the tag (this will have to be set to something different for tags with a PRI other than 5)
-    dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")
-    # convert to POSIXct note: fractional seconds will no longer print, but they are there. 
-    # Run the next line (commented) to verify that you haven't lost your frac seconds
-    # (strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-    dat2 <- dat
-    dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
-    dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )))   #calculate tdiff, then remove multipath
-    dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-    dat4$tdiff[dat4$crazy==0] <- NA
-    dat5 <- dat4[,-14]
-    dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-    itercount <<- itercount+1
-    if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
-    if (!DoFilterFromSavedCleanedData) {
-      dat5<-as.data.table(dat5)
-      filterData(dat5)
-    }
+      { SN<- as.numeric(gsub("[a-zA-Z\\/]{0,20}([0-9]+).*$", "\\1", i))} # get it from the first number in the filename
+    rl<-read_lines(i) # readr
+    gs<-lapply(rl,cleanLinesATS)
+    p<-paste(Filter(isDataLine,gs),sep="\n",collapse="\n") # Filter(isDataLine,gs) or possibly gs[lapply(gs,isDataLine)]
+    dat<-fread(p,blank.lines.skip=TRUE,strip.white=TRUE,na.strings=c("NA","NULL","Null","null","nan","-nan","N/A","","-")) # ,skip="SiteName",
+    headers <- c("Internal", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
+                 "BitPeriod", "Thresh","Detection")                        #make vector of new headers
+    setnames(dat,headers)
+    dat[,RecSN:=SN]   # add SN column 
+    newfn <- paste0(i,".ctmp")
+    fwrite(dat,newfn)
+    headerInFile = T
+    leadingBlanks = 0
+    tz = "Etc/GMT+8"
+    dtFormat = "%m/%d/%Y %H:%M:%OS"
+    nacols = NULL # if this column is null, the row gets cut from the data set. c("Detection","Pres")
+    foutPrefix = "ATS"
+    inferredHeader = NULL
+    Rec_dtf_Hex_strings = c("RecSN","dtf","Hex")
+    mergeFrac = NULL
+    functionCall<-cleanInnerWrap()
+    functionCall(i=newfn, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+    file.remove(newfn)
   }
 }
 
-###Cleaning loop for Lotek Files 
-cleanLotek <-function() {
-  itercount <- 0
-  function(i, tags) {
-    dat <- read.table(i, header = F, sep = ",")   #read in each file
-    SN <- as.numeric(regmatches(i,regexpr("[0-9].*[0-9]", i)))      #extract serial number of the receiver
-    headers <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")     #make vector of new headers
-    names(dat) <- headers                                           #rename with the right headers
-    dat$RecSN <- rep(SN, nrow(dat))                                 #add SN column 
-    dat$datetime <- as.POSIXct(round(dat$datetime*60*60*24), 
-                               origin = "1899-12-30", tz = "GMT")
-    dat$Hex <- as.character(dat$Hex)
-    dat$Hex <- substr(dat$Hex, 2, nchar(dat$Hex))
-    
-    dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]   # filter receiver file by known taglist (already done in Lotek
-    # software should have the same number of dets)
-    dat$nPRI<- 5                                               # set nPRI (Nominal PRI) for the tag (this will have 
-    dat <- as.tbl(dat)                                         # change object format to tbl 
-    dat$dtf <- paste0(dat$datetime, substring(dat$FracSec,2))  # paste the fractional seconds to the end of the DT in a new column
-    dat$dtf<- ymd_hms(dat$dtf) # convert to POSIXct beware this may change value of 0.0000X
-    # to be set to something different for tags with a PRI other than 5)
-    # convert to POSIXct note: fractional seconds will no longer print, but 
-    # they are there. Run the next line to verify that you haven't lost your 
-    # frac seconds
-    # (strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
-    dat2 <- dat
-    dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
-    dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )))   #calculate tdiff, then remove multipath
-    dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
-    dat4$tdiff[dat4$crazy==0] <- NA
-    dat5 <- dat4[,-11]
-    dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-    itercount <<- itercount+1
-    if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
-    if (!DoFilterFromSavedCleanedData) {
-      dat5<-as.data.table(dat5)
-      filterData(dat5)
-    }
-  }
-  # f
+lotekDateconvert <- function(x) {
+  return (as.POSIXct(round(x*60*60*24), # timestamps given in days since midnight first day of 1900
+                     origin = "1899-12-30", tz = "GMT") # correction for erroneous regard of 1900 as a leapyear
+  )
 }
 
 ##filter Loop
@@ -495,7 +331,7 @@ filterData <- function(incomingData=NULL) {
 
 # TODO 20180313: directly in data.table
 readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Period_Nom','nPRI','PRI_estimate','ePRI','Period','PRI'), 
-                     TagColName=c('TagID_Hex','TagIDHex','TagID','TagCode_Hex','TagCode','CodeID','CodeHex','CodeID_Hex','CodeIDHex','Tag','Code','TagSN','HexCode'),
+                     TagColName=c('TagID_Hex','TagIDHex','TagID','TagCode_Hex','TagCode','CodeID','CodeHex','CodeID_Hex','CodeIDHex','Tag','Code','TagSN','HexCode','Tag ID (hex)'),
                      grpColName=c("Rel_Group","RelGroup","Rel_group","Release","Group","Origin","StudyID","Owner")) {
   ret <- data.frame(TagID_Hex=character(),nPRI=numeric(),rel_group=character())
   for (i in 1:nrow(vTagFileNames)) {
@@ -532,7 +368,7 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
   return(ret)
 }
 
-cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL) {
+cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL) { # for customized code (ATS)
   lfs<-list.files.size(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs=FALSE)
   # lf<-list.files(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs = FALSE)
   tf<-length(lfs[,filename]) # total files
@@ -583,7 +419,7 @@ cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbT
 
 cleanInnerWrap <-function(...) {
   itercount <- 0
-  function(i, tags, headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix, inferredHeader, Rec_dtf_Hex_strings, mergeFrac) {
+  function(i, tags, headerInFile=T, leadingBlanks=0, tz="GMT", dtFormat="%Y-%m-%dT%H:%M:%OS", nacols=NULL, foutPrefix=".txt", inferredHeader=NULL, Rec_dtf_Hex_strings=c("RecSN","DateTime","TagID_Hex"), mergeFrac=NULL) {
     if (!headerInFile) {
       dathead <- fread(i, header=F, nrows=0, stringsAsFactors=F, skip=leadingBlanks, fill=T, na.strings=c("NA","NULL","Null","null","nan","-nan","N/A",""))
       classes<-sapply(dathead, class)
@@ -597,7 +433,16 @@ cleanInnerWrap <-function(...) {
       dat <- na.omit(dat,cols=nacols)
     }
     if (nrow(dat)==0) return(F)
-    setnames(dat, old=Rec_dtf_Hex_strings, new=c("RecSN","dtf","Hex")) 
+    if (is.na(Rec_dtf_Hex_strings[1]))  {
+      SN <- as.numeric(gsub("[a-zA-Z\\/]{0,255}([0-9]+).*$", "\\1", i)) # get it from the first number in the filename (please make sure not in raw file directory name)
+      dat[,RecSN:=SN]
+      Rec_dtf_Hex_strings[1]<-"RecSN"
+    }
+    setnames(dat,Rec_dtf_Hex_strings,c("RecSN","dtf","Hex")) 
+    if (dtFormat=="EPOCH") {
+      dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf)))] # dat[,epdtf:=dtf][,dtf:=as.character(...
+      dtFormat="%Y-%m-%d %H:%M:%S"
+    }
     if (length(mergeFrac)>0) {
       dat[,iznumb:=ifelse(is.na(
              tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
@@ -614,13 +459,8 @@ cleanInnerWrap <-function(...) {
     }
     dat[nchar(Hex)==9,Hex:=substr(Hex,4,7)]
     setkey(dat, Hex)
-    # setDT(dat, key=c("Hex")) # convert to data.table # key=c("RecSN","Hex","dtf"))
     if (nrow(dat)==0) return(F)
     dat[,dtf:=as.POSIXct(dtf, format = dtFormat, tz=tz)]
-#    print(sapply(dat,class))
-#    print("")
-#    print(sapply(tags,class))
-#    print("*********")
     setkey(tags,TagID_Hex)
     dat2<-dat[tags,nomatch=0] # bring in the nominal PRI (nPRI)
     if (nrow(dat2)==0) {
@@ -664,31 +504,26 @@ cleanInnerWrap <-function(...) {
 # tags<- read.csv(TAGFILENAME, header=T, colClasses="character") # single tag list file. Superseeded.
 tags<-readTags(vTAGFILENAME)
 
-# Clean all technologies (filter by known TagID, remove multipath)
-
-# top line e.g SM1180711252,SM1,03/13/2018 08:51:48,.115450,FF13,5E,1,19366,82
-#              filename,locname,                dtf,fracsec,TagID,CRC,Valid,SigStr,nbw
-if (DoCleanJST) {
+# Handle all the well-structured files
+# Realtime file formats
+if (DoCleanPrePre) {
   headerInFile = F
   leadingBlanks = 0
-  tz = "Etc/GMT+8"
-  dtFormat = "%m/%d/%Y %H:%M:%OS"
+  tz = "GMT"
+  dtFormat = "%Y-%m-%d %H:%M:%OS"
   nacols = NULL
-  foutPrefix = "JT"
-  inferredHeader = c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
-  Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
-  mergeFrac = "FracSec"
-#  cleanInnerWrap(i=i, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.JST", wpbTitle = "Cleaning Tekno JST files",
+  foutPrefix = "RT_npp"
+  inferredHeader = c("SQSQueue","SQSMessageID","RecSN","DLOrder","DateTime","microsecs","Hex","TxAmplitude","TxOffset","TxNBW","TxCRC")
+  Rec_dtf_Hex_strings = c("RecSN", "DateTime", "Hex")
+  mergeFrac = "microsecs"
+  functionCall<-cleanInnerWrap()
+  cleanOuterWrapper(functionCall, tags=tags, precleanDir = RT_Dir, filePattern = "*.CSV$", wpbTitle = "Cleaning RT files before preprocessing",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  #  fn<-cleanJST() # do the call this way for enclosure, otherwise itercount resets to 0 each time
-#  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.JST", wpbTitle = "Cleaning Tekno JST files")
 }
 
-if (DoCleanRT) {
+if (DoCleanRT) { # preprocessed (with DBCnx.py) DataCom detection files
   headerInFile = T
   leadingBlanks = 0
   tz = "GMT"
@@ -705,7 +540,8 @@ if (DoCleanRT) {
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
 }
 
-if (DoCleanShoreRT){
+if (DoCleanShoreRT){ # ShoreStation files created with
+  # cat `ls -dR */*.txt` | awk -F , 'NF == 11' > DetectionsThru2018mmdd_hhnn.csv
   headerInFile = F
   leadingBlanks = 0
   tz = "GMT"
@@ -713,19 +549,33 @@ if (DoCleanShoreRT){
   nacols = NULL
   foutPrefix = "SSRT"
   inferredHeader = c("RecSN","DetOrder","DetectionDate","microsecs","TagID","Amp","FreqShift","NBW","Pressure","WaterTemp","CRC")
-  #187013,001,2018-03-20 19:40:36,.517761,FF13,19249,0249,019,127277,13.6,#D3
   Rec_dtf_Hex_strings = c("RecSN","DetectionDate","TagID")
   mergeFrac = "microsecs"
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = SSRT_Dir, filePattern = "*.csv", wpbTitle = "Cleaning Shore Station Data",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = SSRT_Dir, filePattern = "*.csv$", wpbTitle = "Cleaning Shore Station Data",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
 }
 
-# Detection,Serial Number,Date Time,TagCode,Tilt,vBatt,Temp,Pressure,Amp,Freq,Thresh,nbw,snr,valid
-#       -,18-7013,03/13/2018 10:03:07.903887,G72ffffff, 86.0, 0.63, 4.1, 0, -99, -99, 100, -99, -99, -99
-# 139,18-7013,03/13/2018 10:03:27.650602,G72FF135E, 86.0, 0.63, 4.1, 0, 19423,   172, 100,    16,   61.7, 1
+# Tekno autonomous file formats
+if (DoCleanJST) {
+  headerInFile = F
+  leadingBlanks = 0
+  tz = "Etc/GMT+8"
+  dtFormat = "%m/%d/%Y %H:%M:%OS"
+  nacols = NULL
+  foutPrefix = "JT"
+  inferredHeader = c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
+  Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
+  mergeFrac = "FracSec"
+  fn<-cleanInnerWrap()
+  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
+                    headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
+                    nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+}
+
 if (DoCleanSUM) {
   headerInFile = T
   leadingBlanks = 8
@@ -734,37 +584,95 @@ if (DoCleanSUM) {
   nacols = c("Detection")
   foutPrefix = "SUM"
   inferredHeader = NULL
-  # Detection,Serial Number,Date Time,TagCode,Tilt,vBatt,Temp,Pressure,Amp,Freq,Thresh,nbw,snr,valid
   Rec_dtf_Hex_strings = c("Serial Number","Date Time","TagCode")
   mergeFrac = NULL
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.SUM", wpbTitle = "Cleaning SUM Files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
-  
-  # fn<-cleanSUM()
-  # cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.SUM", wpbTitle = "Cleaning SUM Files")
-}
-if (DoCleanPrePre) {
-  fn<-cleanRT_pre_preprocess()
-  cleanWrapper(fn, tags, precleanDir = RT_Dir, filePattern = "*.CSV", wpbTitle = "Cleaning RT files before preprocessing")
 }
 
-if (DoCleanATS) {
-  fn<-cleanATScsv()
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.CSV", wpbTitle = "Cleaning ATS CSV files")
-  fn<-cleanATSxls()
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.XLS?", wpbTitle = "Cleaning ATS XLS(x) files")
-}
-
+# Lotek Autonomous. Files are already pre-filtered for tags from their "JST" file format
 if (DoCleanLotek) {
-  fn<-cleanLotek()
-  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.TXT", wpbTitle = "Cleaning LoTek TXT files")
+  headerInFile = F
+  leadingBlanks = 0
+  tz = "GMT"
+  dtFormat = "EPOCH"
+  nacols = NULL
+  foutPrefix = "LT"
+  inferredHeader = c("datetime", "FracSec", "Dec", "Hex", "SigStr")
+  Rec_dtf_Hex_strings = c(NA, "datetime", "Hex")
+  mergeFrac = "FracSec"
+  fn<-cleanInnerWrap()
+  cleanOuterWrapper(fn, tags=tags, precleanDir = NON_RT_Dir, filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
+                    headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
+                    nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
 }
 
-###Filtering Loop
-rm(tags)
+# Last, do the files with less structure (needing customized code)
+# ATS autonomous
+if (DoCleanATS) {
+  fn<-cleanATSxls() # converts Excel files to a CSV-style file, then cleans
+  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.XLS?$", wpbTitle = "Cleaning ATS XLS(x) files")
+  fn<-cleanATScsv() # clean ATS CSVs
+  cleanWrapper(fn, tags, precleanDir = NON_RT_Dir, filePattern = "*.CSV$", wpbTitle = "Cleaning ATS CSV files")
+}
+
+### Old cleaning loop for ATS receiver files
+# cleanATSxls <- function() { # have to figure out how to dovetail this with the non-xlses.  Read in and immediately write out to CSV, then set params?
+#     itercount <- 0
+#     function(i, tags) {
+#       dat <- read_excel(i)                    #read in each file
+#       SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
+#       if(is.na(SN) == TRUE) {
+#         SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
+#       }
+#       print(SN)
+#       find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
+#       # the value 100 below can be set to anything, it just needs to be less that the total number of detections in the file
+#       start <- max(find.na[find.na <= 100])                      
+#       dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
+#       
+#       headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
+#                    "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
+#       names(dat) <- headers 
+#       # rename with the right headers
+#       extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
+#       mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
+#       names(mat) <- extracols
+#       dat <- cbind(dat, mat)
+#       dat$Hex <- substr(dat$Hex, 4, 7)                           #deal with the TagCode situation
+#       dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
+#       dat <- dat[ ,5:(ncol(dat))]                                  #drop the filename and site name columns
+#       print(dat)
+#       dat <- as.tbl(dat)                                         #change object format to tbl 
+#       dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
+#       dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
+#       # to be set to something different for tags with a PRI other than 5)
+#       dat$dtf<- as.POSIXct(dat$dtf, format = "%m/%d/%Y %H:%M:%OS", 
+#                            tz="Etc/GMT+8")                       #convert to POSIXct note: fractional seconds will no longer print, but 
+#       # they are there. Run the next line to verify that you haven't lost your 
+#       # frac seconds
+#       # (strftime(dat$dtf, format = "%m/%d/%Y %H:%M:%OS6"))
+#       dat2 <- dat
+#       dat2<- arrange(dat2, Hex, dtf)                             #sort by TagID and then dtf, Frac Second
+#       dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)], units = "secs" )))   #calculate tdiff, then remove multipath
+#       dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
+#       dat4$tdiff[dat4$crazy==0] <- NA
+#       dat5 <- dat4[,-14]
+#       dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
+#       itercount <<- itercount+1
+#       if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
+#       if (!DoFilterFromSavedCleanedData) {
+#         dat5<-as.data.table(dat5)
+#         filterData(dat5)
+#       }
+#     }
+# }
+
+###Do the filtering loop
 if (DoFilterFromSavedCleanedData) {
   filterData()
 }

@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter1.3b_20170824.R
+# Version GS_TeknoFilter1.4_20170914.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                            Last Updated: 08/24/2017                                                              #
+#                                            Last Updated: 09/14/2017                                                              #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -129,24 +129,26 @@ for(i in list.files("./jst")){
 
 
 
-
 ###Cleaning loop for .SUM files
+timer2 <- 0
 for(i in list.files("./raw")){
   #read in each file
   dat <- read.csv(paste0("./raw/", i), skip = 8, header=T)  
   #rename columns to match db
   names(dat)<- c("Detection", "RecSN", "dtf", "Hex", "Tilt", "Volt", "Temp", "Pres", "Amp",
-               "Freq", "Thresh", "nbw", "snr", "Valid")              
-
+                 "Freq", "Thresh", "nbw", "snr", "Valid")              
+  
   #change object format to tbl
   dat <- as.tbl(dat)                                                   
   #drop the barker code and the CRC from tagid field
   dat$Hex <- substr(dat$Hex, 4, 7)    
   #name and print new tbl w/ bad detect lines removed
   (dat <- dat %>%
-    filter(Detection != "      -"))                                    
+      filter(Detection != "      -"))                                    
   #filter receiver file by known taglist
   dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                          
+  #if there aren't any tags from the tag list in the receiver files, move on to the next file
+  if(!(nrow(dat)))next
   #set nPRI (Nominal PRI) for the tag 
   dat$nPRI<- 5     
   #convert to POSIXct note: fractional secons will no longer print, but they are there
@@ -157,12 +159,13 @@ for(i in list.files("./raw")){
   dat2<- arrange(dat2, Hex, dtf)#sort by TagID and then dtf, Frac Second
   #calculate tdiff, then remove multipath
   dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)])), 
-                   winmax=dat2$dtf+((dat2$nPRI*1.3*max(counter))+1))
+                     winmax=dat2$dtf+((dat2$nPRI*1.3*max(counter))+1))
   dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
   dat4$tdiff[dat4$crazy==0] <- NA
   dat5 <- dat4[,-18]
   dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
-  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.txt"))
+  timer2 <- timer2+1
+  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", timer2, ")",  "_cleaned.txt"))
 }     #need to test this loop with multiple files,
 #loop ran, now feed files back into R and see if they look right
 # SN6003 <- dget("./cleaned/15-6003_cleaned.txt")
@@ -174,14 +177,14 @@ for(i in list.files("./cleaned")){
   datos <- dget(paste0("./cleaned/", i))        #read in each file
   myResults <- dataFilter(dat=datos, filterthresh=4, counter=1:12)
   rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in% 
-                      paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
-  write.csv(myResults, paste0("./accepted/", myResults$RecSN[1], "_accepted.csv"), row.names=F)
-  write.csv(rejecteds, paste0("./rejected/", rejecteds$RecSN[1], "_rejected.csv"), row.names=F)
+                       paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
+  write.csv(myResults, paste0("./accepted/", substr(i, 1, nchar(i)-12), "_accepted.csv"), row.names=F)
+  write.csv(rejecteds, paste0("./rejected/", substr(i, 1, nchar(i)-12), "_rejected.csv"), row.names=F)
 }
-
 
 
 ###############################################################
 #both filtered files end up with same data, too
 sum <- read.csv("./accepted/15-6034_accepted.csv", header = T)
 jst <- read.csv("./accepted/2015-6034_accepted.csv", header = T)
+###############################################################

@@ -1,4 +1,4 @@
-See also: data.frame branch (old): https://github.com/UCDavisBiotelemetry/JSATSfilter/tree/data.frame
+See also: data.frame branch (old): https://github.com/UCDavisBiotelemetry/JSATSfilter/tree/data.frame and branch history at https://github.com/UCDavisBiotelemetry/JSATSfilter/network
 
 # ChangeLog: data.table branch
 JSATS filtering algorithm: data.table version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.

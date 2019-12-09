@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter2.5.1.1_20180126.R
+# Version MP_TeknoFilter2.5.1.1_20180121.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 01/26/2018 by Matt Pagel                                                         #
+#                                   Last Updated: 01/21/2018 by Matt Pagel                                                         #
 #                                                                                                                                  #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:                                             #
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.                #
@@ -22,7 +22,7 @@ DoCleanATS = FALSE
 DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
-FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
 FLOPFACTOR = 0.155 #PNNL spec: 0.006. Arnold: .04*5 = 0.2
 MULTIPATHWINDOW = 0.2 #PNNL spec: 0.156. Arnold: 0.2
 counter <- 1:12

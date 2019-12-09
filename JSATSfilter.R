@@ -1,11 +1,11 @@
-# Version GS_TeknoFilter2.2.1_CHEdit_20180626_ATSfix_lotekFixing.R
-####################################################################################################################################
-#                                                                                                                                  #
-#                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
-#                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 06/26/2018  Colby Hause version editor, Matt Pagel assist                                  #
-#                                                                                                                                  #
-####################################################################################################################################
+# Version GS_TeknoFilter2.3_MPEdit_20180709.R
+###################################################################################################################################
+#                                                                                                                                 #
+#                         Tag Filter for Teknologic Receiver Files converted from CBR description                                 #
+#                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                             #
+#                         Gabe Singer (data.frame) version 2.3 last updated: 2018-07-09 MP                                        #
+#                                                                                                                                 #
+###################################################################################################################################
 
 
 ###Install Load Function
@@ -17,9 +17,9 @@ install.load <- function(package.name)
 
 install.load('tidyverse')
 install.load('readxl')
-install.packages("lubridate")
+install.load("lubridate")
 
-
+setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 ###counter
 counter <- 1:12
 
@@ -39,9 +39,9 @@ mode <- function(x, i){
 }
 
 ###load taglist
-tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
-tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
-#tags$TagID_Hex <- as.character(tags$TagID_Hex)
+tags<- read.csv("taglist/t2018TagInventory.csv", header = T) #list of known Tag IDs
+#tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
+tags$TagID_Hex<- as.character(tags$TagID_Hex)
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
@@ -56,6 +56,7 @@ magicFunc <- function(dat, tagHex, counter){
       # indices<- numeric(0) #make empty df to hold detections retained
       
       for(j in 2:nrow(hits)){
+        if ((j %% 1000)==999) print(j)
         candidates<- round(as.numeric(hits$dtf[j]-hits$dtf[1])/counter, digits = 2) #subsubtract time of each det in window from initial and divide by 1:12
         candidates<- candidates[candidates>= tagid$nPRI[i]*0.651 & candidates<= tagid$nPRI[i]*1.3] #constrain values
         retained<- c(retained, candidates)#bind each batch of retained candiate PRIs to a single list
@@ -70,6 +71,7 @@ magicFunc <- function(dat, tagHex, counter){
         
         nbHits <- 1
         for(j in 2:nrow(hits)){
+          if((j %% 1000)==499) print(j)
           ii <- round(as.numeric(hits$dtf[j]-hits$dtf[1])/ePRI)
           uppb <- ii*ePRI+hits$dtf[1]+0.006+ii*0.006
           lowb <- ii*ePRI+hits$dtf[1]-(0.006+ii*0.006)
@@ -91,7 +93,10 @@ magicFunc <- function(dat, tagHex, counter){
 dataFilter <- function(dat, filterthresh, counter){
   res <- dat[numeric(0),]
   timer <- 0
-  for(i in unique(dat$Hex)){
+  dh<-unique(dat$Hex)
+  lu<-length(dh)
+  for(i in unique(dh)){
+    print(paste0(i,": ",timer/lu))
     ans <- magicFunc(dat, tagHex=i, counter=1:12)
     ans[!is.na(ans$hitRowNb),]
     ans2 <- ans[ans$nbAcceptedHitsForThisInitialHit>= filterthresh,]
@@ -100,7 +105,6 @@ dataFilter <- function(dat, filterthresh, counter){
     ans3 <- dat[dat$Hex==i,][keep,]
     res <- rbind(res, ans3)
     timer <- timer+1
-    print(timer/length(unique(dat$Hex)))
   }
   return(res)
 }
@@ -109,8 +113,8 @@ dataFilter <- function(dat, filterthresh, counter){
 for(i in list.files("./jst")){
   dat <- read.csv(paste0("./jst/", i), header=F)        #read in each file
   names(dat)<- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW") #rename columns
-  tags <- read.csv("./taglist/FriantTaglist.csv")
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]
+  tags <- read.csv("./taglist/t2018TagInventory.csv")
+  dat<- dat[dat$Hex %in% tags$TagID_Hex, ]
   dat$nPRI<- 5   # set nPRI (Nominal PRI) for the tag
   #combine the DT and FracSec columns into a single time column and convert to POSIXct
   dat$dtf<- paste0(dat$DT, substring(dat$FracSec,2)) #paste the fractional seconds to the end of the DT in a new column
@@ -130,9 +134,9 @@ for(i in list.files("./jst")){
 
 ###Cleaning loop for .SUM files
 timer2 <- 0
-for(i in list.files("./raw")){
+for(i in list.files("./sum")){
   #read in each file
-  dat <- read.csv(paste0("./raw/", i), skip = 8, header=T)
+  dat <- read.csv(paste0("./sum/", i), skip = 8, header=T)
   #rename columns to match db
   names(dat)<- c("Detection", "RecSN", "dtf", "Hex", "Tilt", "Volt", "Temp", "Pres", "Amp",
                  "Freq", "Thresh", "nbw", "snr", "Valid")
@@ -145,7 +149,7 @@ for(i in list.files("./raw")){
   (dat <- dat %>%
       filter(Detection != "      -"))
   #filter receiver file by known taglist
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]
+  dat<- dat[dat$Hex %in% tags$TagID_Hex, ]
   #if there aren't any tags from the tag list in the receiver files, move on to the next file
   if(!(nrow(dat)))next
   #set nPRI (Nominal PRI) for the tag
@@ -173,8 +177,8 @@ for(i in list.files("./raw")){
 
 ###Cleaning loop for ATS receiver files
 timer2 <- 0
-for(i in list.files("./raw/")){
-  dat <- read_excel(paste0("./raw/", i))                    #read in each file
+for(i in list.files("./ats/")){
+  dat <- read_excel(paste0("./ats/", i))                    #read in each file
   SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
   if(is.na(SN) == TRUE) {
     SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
@@ -186,13 +190,11 @@ for(i in list.files("./raw/")){
   #number of detections in the file
   dat <- dat[(start + 7):nrow(dat), ]                        #ditch garbage at beginning of the file
   
-  #headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-               #"BitPeriod", "Thresh", "Detection")                        #make vector of new headers
   headers <- c("Filename", "SiteName", "SiteName2", "SiteName3", "dtf", "Hex", "Tilt", "VBatt", "Temp", "Pres", "SigStr",
-               "BitPeriod", "Thresh") # TOOK OUT "DETECTION" FOR 2018 FILES  
+               "BitPeriod", "Thresh", "Detection")                        #make vector of new headers
   names(dat) <- headers 
                                                             #rename with the right headers
-  extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON", "Detection") #aded "Detection" here
+  extracols <- c("Amp", "Freq", "nbw", "snr","Valid", "RKM", "GenRKM", "LAT", "LON")
   mat <- as.data.frame(matrix(rep(NA, nrow(dat)*length(extracols)), nrow(dat), length(extracols)))
   names(mat) <- extracols
   dat <- cbind(dat, mat)
@@ -222,9 +224,11 @@ for(i in list.files("./raw/")){
 
 ###Cleaning loop for Lotek Files 
 timer2 <- 0
-for(i in list.files("./raw/")){
-  dat <- read.table(paste0("./raw/", i), header = F, sep = ",")   #read in each file
-  SN <- as.numeric(regmatches(i,regexpr("[0-9]+", i)))    #extract serial number of the receiver. was "[0-9].*[0-9]" inside regexpr call
+tags<-read.csv("taglist/2017/FrianttaglistUCDtags(withBeacon).csv", header=T)
+tags$TagID_Hex <-as.character(tags$Tag.ID..hex.) #read.csv changes Tag ID (hex) to Tag.ID..hex.  fread would leave it as-is.
+for(i in list.files("./lotek/")){
+  dat <- read.table(paste0("./lotek/", i), header = F, sep = ",")   #read in each file
+  SN <- as.numeric(regmatches(i,regexpr("[0-9].*[0-9]", i)))               #extract serial number of the receiver
   headers <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")     #make vector of new headers
   names(dat) <- headers                                           #rename with the right headers
   dat$RecSN <- rep(SN, nrow(dat))                                 #add SN column 
@@ -233,9 +237,8 @@ for(i in list.files("./raw/")){
   dat$Hex <- as.character(dat$Hex)
   dat$Hex <- substr(dat$Hex, 2, nchar(dat$Hex))
   
-  #dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]               #filter receiver file by known taglist (already done in Lotek
-  dat<- dat[dat$Hex %in% tags$TagID_Hex, ] 
-   # software should have the same number of dets)
+  dat<- dat[dat$Hex %in% tags$TagID_Hex, ]               #filter receiver file by known taglist (already done in Lotek
+  # software should have the same number of dets)
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
   dat <- as.tbl(dat)                                         #change object format to tbl 
   dat$dtf <- paste0(dat$datetime, substring(dat$FracSec,2))  #paste the fractional seconds to the end of the DT in a new column
@@ -270,6 +273,6 @@ for(i in list.files("./cleaned")){
 
 ###############################################################
 #both filtered files end up with same data, too
-sum <- read.csv("./accepted/15-6034_accepted.csv", header = T)
-jst <- read.csv("./accepted/2015-6034_accepted.csv", header = T)
+# sum <- read.csv("./accepted/15-6034_accepted.csv", header = T)
+# jst <- read.csv("./accepted/2015-6034_accepted.csv", header = T)
 ###############################################################

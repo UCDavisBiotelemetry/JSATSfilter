@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter2.5_20171127.R
+# Version MP_TeknoFilter2.5.1.0_20171127.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 11/27/2017 by Matt Pagel                                                         #
+#                                   Last Updated: 11/21/2017 by Matt Pagel                                                         #
 #                                                                                                                                  #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:                                             #
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.                #
@@ -21,7 +21,7 @@ DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
-FLOPFACTOR = 0.006*5 #PNNL spec: 0.006. Arnold: .04*5 = 0.2
+FLOPFACTOR = 0.155 #PNNL spec: 0.006. Arnold: .04*5 = 0.2
 MULTIPATHWINDOW = 0.2 #PNNL spec: 0.156. Arnold: 0.2
 counter <- 1:12
 
@@ -146,11 +146,11 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
   if (aclist[,.N]>0) {
     setkey(aclist,x)
     res <- tagdet[aclist]
-    res[,(shiftzcols[2:max(shiftz)]):=NULL] # delete columns
+#    res[,(shiftzcols[2:max(shiftz)]):=NULL] # delete columns
     res[,twind:=l1-dtf]
     itr <- as.data.table(merge(x=counter,res))
     itr[,icalc:=round(twind/x,2)]
-    ll <- itr[icalc>=nPRI*0.651 & icalc<=nPRI*1.3]
+    ll <- itr[(icalc>=nPRI*0.651 & icalc<=nPRI*1.3)]
     setkey(ll,dtf)
     abbrev = ll[,.(dtf,twind,icalc,x,nPRI)]
     setkey(abbrev,icalc)
@@ -161,37 +161,18 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
     flopintervals[,x:=V1][,V1:=NULL][,flop:=(x+1)*FLOPFACTOR][,flopmin:=x*ePRI-flop][,flopmax:=x*ePRI+flop][,flop:=NULL]
     maxflop <- flopintervals[x==12,flopmax]
     windowz <- unique(abbrev[,.(dtf,ewinmax=dtf+maxflop)])
-    dett <-windowz[,.(dup=dtf,dd=dtf)]
+    dett <-res[,.(dup=dtf,dd=dtf)]
     setkey(dett,dup,dd)
     setkey(windowz,dtf,ewinmax)
-    fomega <- foverlaps(dett,windowz,maxgap=0,type="within")[,dd:=NULL][,dif:=(dup-dtf)*1000][,dif2:=(dup-dtf)*1000]
+    fomega <- foverlaps(dett,windowz,maxgap=0,type="within",nomatch=0)[,dd:=NULL][,dif:=(dup-dtf)*1000][,dif2:=(dup-dtf)*1000]
     flopintervals[,newmin:=flopmin*1000][,newmax:=flopmax*1000]
+#    setkey(flopintervals,newmin,newmax)
     setkey(flopintervals,newmin,newmax)
     if (fomega[,.N]>0) {
+#      if (fomega[,.N]>250) { Sys.sleep(1)}
       setkey(fomega,dif,dif2)
-    # Hope to correct for: Error in if (any(y[[yintervals[2L]]] - y[[yintervals[1L]]] < 0L)) stop("All entries in column ",  : missing value where TRUE/FALSE needed
-      tryCatch(
-        {
-          windHits<-foverlaps(fomega,flopintervals,type="within")[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]},
-        warning = function(w) {
-          print("warning encountered when trying to find matching time entries")
-          print(paste(fomega[,.N],"was the size of array"))
-          windHits<-fomega[1==0][,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=NA)]
-          print(ePRI)
-          print(tagHex)
-          print(w)
-        },
-        error = function(e) {
-          print("error encountered when trying to find matching time entries")
-          print(paste(fomega[,.N],"was the size of array"))
-          windHits<-fomega[1==0][,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=NA)]
-          print(ePRI)
-          print(tagHex)
-          print(e)
-        },
-        finally = { }
-      )
-  #  windHits<-foverlaps(fomega,flopintervals,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)][,c:=.N,keyby=firstHit][c>1]  logTable <- data.table(hitRowNb=numeric(0), initialHitRowNb=numeric(0), isAccepted=logical(0), nbAcceptedHitsForThisInitialHit =logical(0))
+#      if (fomega[,.N]>250) { Sys.sleep(1)}
+      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x)]
       NAs<-windHits[is.na(intervals)]
       noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
       noOnlyFirst<-noNAs[c>1]
@@ -450,8 +431,8 @@ if (DoCleanJST) for(i in list.files("./jst")) {
 if (DoCleanSUM) {
   fn<-cleanSUM()
   lf<-list.files("./raw2/",pattern="*.SUM", full.names=TRUE, include.dirs = FALSE)
-  fc<-length(lf)
-  tf<-sum.file.sizes(lf)
+  tf<-length(lf)
+#  tf<-sum.file.sizes(lf)
   pb<-winProgressBar(title="Cleaning SUM files", label="file", min=0, max=tf, initial=0)
   j<-0
   for(i in lf){

@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter2.3_MPEdit_20180709.R
+# Version GS_TeknoFilter2.3.2_MPEdit_20180925.R
 ###################################################################################################################################
 #                                                                                                                                 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                 #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                             #
-#                         Gabe Singer (data.frame) version 2.3 last updated: 2018-07-09 MP                                        #
+#                         Gabe Singer (data.frame) version 2.3.2 last updated: 2018-09-25 MP                                      #
 #                                                                                                                                 #
 ###################################################################################################################################
 
@@ -19,7 +19,7 @@ install.load('tidyverse')
 install.load('readxl')
 install.load("lubridate")
 
-setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+setwd("P:/TempSSD/Files for Matt/2018 raw data/singleFile")
 ###counter
 counter <- 1:12
 
@@ -46,9 +46,11 @@ tags$TagID_Hex<- as.character(tags$TagID_Hex)
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
   tagid <- dat5[dat5$Hex==tagHex,]##use 2892 as an example
+#  browser()
   logTable <- data.frame(hitRowNb=numeric(0), initialHitRowNb=numeric(0), isAccepted=logical(0), nbAcceptedHitsForThisInitialHit =logical(0))
   for(i in 1:nrow(tagid)){
     hits<- tagid[tagid$dtf>=tagid$dtf[i] & tagid$dtf<=tagid$winmax[i], ] #hits within window
+#    browser()
     #head(tagid[tagid$dtf>=tagid$dtf[i], ], 100)
     #if nrow(hits>=4) then... (need to write code for this qualifier, if_else???)
     if(nrow(hits)>1){
@@ -57,24 +59,28 @@ magicFunc <- function(dat, tagHex, counter){
       
       for(j in 2:nrow(hits)){
         if ((j %% 1000)==999) print(j)
-        candidates<- round(as.numeric(hits$dtf[j]-hits$dtf[1])/counter, digits = 2) #subsubtract time of each det in window from initial and divide by 1:12
+        candidates<- round(as.numeric(duration(as.duration(hits$dtf[j]-hits$dtf[1]),"seconds"))/counter, digits = 2) #subsubtract time of each det in window from initial and divide by 1:12
         candidates<- candidates[candidates>= tagid$nPRI[i]*0.651 & candidates<= tagid$nPRI[i]*1.3] #constrain values
-        retained<- c(retained, candidates)#bind each batch of retained candiate PRIs to a single list
+        retained<- c(retained, candidates) # bind each batch of retained candiate PRIs to a single list
         # indices <- c(indices, rep(j, length(candidates)))
       }
       if(length(retained)==0){
+        # print(paste0(tagHex, ": All detections removed by filter based on initial window: "))
         logTable <- rbind(logTable, data.frame(hitRowNb=NA, initialHitRowNb=i, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0))
       } else {
         #plot(table(retained))
         ePRI<- min(mode(retained, i))
         if(is.na(ePRI)) ePRI <- min(retained)
-        
+        oddPRI<-(ePRI<4.9) || (ePRI>5.1)
+        # if (oddPRI) print(paste0(tagHex, ": ePRI = ",ePRI," based on values - ",toString(retained)))
         nbHits <- 1
         for(j in 2:nrow(hits)){
           if((j %% 1000)==499) print(j)
-          ii <- round(as.numeric(hits$dtf[j]-hits$dtf[1])/ePRI)
+          ii <- round(as.numeric(duration(as.duration(hits$dtf[j]-hits$dtf[1]),"seconds"))/ePRI)
+          if (ii>12) break # exit j loop
           uppb <- ii*ePRI+hits$dtf[1]+0.006+ii*0.006
           lowb <- ii*ePRI+hits$dtf[1]-(0.006+ii*0.006)
+          # if (oddPRI) print(sprintf("Using PRI: %0.2f; %s - %s = %0.6f. %d cycles. Bounds upper: %s; lower: %s",ePRI,hits$dtf[j],hits$dtf[1],as.numeric(duration(as.duration(hits$dtf[j]-hits$dtf[1]),"seconds")),ii,uppb,lowb))
           nbHits <- nbHits+(hits$dtf[j]>= lowb & hits$dtf[j]<= uppb)
           logTable <- rbind(logTable, data.frame(hitRowNb=i+j-1, initialHitRowNb=i, isAccepted=(hits$dtf[j]>= lowb & hits$dtf[j]<= uppb), nbAcceptedHitsForThisInitialHit=NA))
         }
@@ -86,6 +92,7 @@ magicFunc <- function(dat, tagHex, counter){
     #print(paste("row", i,"done"))
     #readline("next\n")
   }
+  # print(logTable)
   return(logTable)
 }
 
@@ -224,8 +231,8 @@ for(i in list.files("./ats/")){
 
 ###Cleaning loop for Lotek Files 
 timer2 <- 0
-tags<-read.csv("taglist/2017/FrianttaglistUCDtags(withBeacon).csv", header=T)
-tags$TagID_Hex <-as.character(tags$Tag.ID..hex.) #read.csv changes Tag ID (hex) to Tag.ID..hex.  fread would leave it as-is.
+#tags<-read.csv("taglist/2017/FrianttaglistUCDtags(withBeacon).csv", header=T)
+#tags$TagID_Hex <-as.character(tags$Tag.ID..hex.) #read.csv changes Tag ID (hex) to Tag.ID..hex.  fread would leave it as-is.
 for(i in list.files("./lotek/")){
   dat <- read.table(paste0("./lotek/", i), header = F, sep = ",")   #read in each file
   SN <- as.numeric(regmatches(i,regexpr("[0-9].*[0-9]", i)))               #extract serial number of the receiver
@@ -270,6 +277,22 @@ for(i in list.files("./cleaned")){
   write.csv(rejecteds, paste0("./rejected/", substr(i, 1, nchar(i)-12), "_rejected.csv"), row.names=F)
 }
 
+convertFromDT<-function(dat=dat) {
+  setDT(dat)
+  dat[,dtf:=with_tz(as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC"),tzone="ETC/GMT+8")]
+  dat[,winmax:=dtf+duration(seconds = 78)]
+  setDF(dat)
+  return(dat)
+}
+
+divbyrange<-function(x) { 
+  paste0(Filter(function(y) { 
+    res<- (y>(5*.0651) & y<(5*1.3) )
+    browser()
+    # print(res)
+    return(res)
+  }, round(x/1:12,2)),collapse=",")
+}
 
 ###############################################################
 #both filtered files end up with same data, too

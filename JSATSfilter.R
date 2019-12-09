@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter2.5.1.0_20171127.R
+# Version MP_TeknoFilter2.5.1.1_20180121.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 11/21/2017 by Matt Pagel                                                         #
+#                                   Last Updated: 01/21/2018 by Matt Pagel                                                         #
 #                                                                                                                                  #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:                                             #
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.                #
@@ -11,11 +11,13 @@
 #              For example, one might use TZ="JST-9" and TZ="HST10" for Japan and Hawaii, respectively.                            #
 ####################################################################################################################################
 #setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/Pat Brandes Filter Data/Matt")
-setwd("P:/TempSSD")
+#setwd("P:/TempSSD")
+setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 #setwd("C:/Users/chause/Desktop/Pats Filter Data/SJReceieverFilterData")
-TAGFILENAME = "./taglist/Brandes.csv"
+TAGFILENAME = "./taglist/NOAATaglist20178.csv"
 DoCleanJST = FALSE
-DoCleanSUM = TRUE
+DoCleanRT = TRUE
+DoCleanSUM = FALSE
 DoCleanATS = FALSE
 DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
@@ -246,6 +248,41 @@ cleanJST <- function(i, tags) {
 #  fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.fwri"))
 }
 
+###Clean realtime csv files
+cleanRT <- function(...) {
+  itercount <- 0
+  f<-function(i, tags) {
+    dat <- read.csv(i, header=T)        #read in each file
+    names(dat)
+    names(dat)<- c("SQSQueue","SQSMessageID","RecSN","DLOrder","dtf","Hex","TxAmplitude","TxOffset","TxNBW") # DetectionDate to dtf, TagID to Hex, ReceiverID to RecSN
+    # names(dat)<- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW") #rename columns
+    #  tags <- read.csv("./taglist/FriantTaglist.csv")
+    dat<- dat[dat$Hex %in% tags$TagID_Hex, ]
+    dat$nPRI<- 10   # set nPRI (Nominal PRI) for the tag 
+    #combine the DT and FracSec columns into a single time column and convert to POSIXct
+    # dat$dtf<- paste0(dat$DT, substring(dat$FracSec,2)) #paste the fractional seconds to the end of the DT in a new column
+    dat$dtf<- as.POSIXct(dat$dtf, format = "%Y-%m-%d %H:%M:%OS", tz="Etc/GMT+8") #convert to POSIXct beware this may change value of 0.0000X
+    #head(strftime(dat2$dtf, format = "%m/%d/%Y %H:%M:%OS5")) #verify that although the fractional seconds don't print, they are indeed there
+    dat2<- as.tbl(dat)
+    dat2$Hex <- as.character(dat2$Hex)
+    dat2<- arrange(dat2, Hex, dtf) #sort by TagID and then dtf, Frac Second
+    #calculate tdiff, then remove multipath
+    dat3 <- data.frame(dat2, tdiff=c(NA, difftime(dat2$dtf[-1], dat2$dtf[-nrow(dat2)])))
+    dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
+    dat4$tdiff[dat4$crazy==0] <- NA
+    dat5 <- dat4[,!(names(dat4) %in% c("crazy"))]
+    dat5 <- dat5[dat5$tdiff>MULTIPATHWINDOW | is.na(dat5$tdiff),]
+    #  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.dput"))
+    itercount <<- itercount + 1
+    if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
+    if (!DoFilterFromSavedCleanedData) {
+      dat5<-as.data.table(dat5)
+      filterData(dat5)
+    }
+  }
+  f(...)
+}
+
 ###Cleaning .SUM files
 cleanSUM <- function() { #set up enclosure
   itercount <- 0
@@ -426,6 +463,13 @@ tags<- read.csv(TAGFILENAME, header=T, colClasses="character") #list of known Ta
 if (DoCleanJST) for(i in list.files("./jst")) {
   if (file.info(i)["isdir"]) next 
   cleanJST(i, tags)
+}
+
+if (DoCleanRT) {
+  for (i in list.files("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/",pattern = "jsats_2017900[34]_JSATS_*")) {
+#    if (file.info(i)["isdir"]) next 
+    cleanRT(i, tags)
+  }
 }
 
 if (DoCleanSUM) {

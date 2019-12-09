@@ -1,7 +1,8 @@
 # JSATSfilter
 An attempt to make a repo of any code versions of "teknofilter" we can dig up.
 
-# ChangeLog summary: data.frame version
+## ChangeLog summary
+### data.frame version
 JSATS filtering algorithm: data.frame version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.
 Primary author is Gabriel Singer, with some early code written by Damien Caillaud
 

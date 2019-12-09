@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter1.4a_20170831.R
+# Version MP_TeknoFilter1.4b_20171001.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                            Last Updated: 2017-08-31 MP                                                           #
+#                                            Last Updated: 2017-10-01 MP                                                           #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -43,10 +43,11 @@ mode <- function(x, i){
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
-  tagid <- dat5[dat5$Hex==tagHex,]##use 2892 as an example
-  logTable <- data.frame(hitRowNb=numeric(0), initialHitRowNb=numeric(0), isAccepted=logical(0), nbAcceptedHitsForThisInitialHit =logical(0))
+  tagdet <- dat5[Hex==tagHex] ##use 2892 as an example
+  logTable <- data.table(hitRowNb=numeric(0), initialHitRowNb=numeric(0), isAccepted=logical(0), nbAcceptedHitsForThisInitialHit =logical(0))
   for(i in 1:nrow(tagid)){
-    hits<- tagid[tagid$dtf>=tagid$dtf[i] & tagid$dtf<=tagid$winmax[i], ] #hits within window
+#    hits<- tagid[tagid$dtf>=tagid$dtf[i] & tagid$dtf<=tagid$winmax[i], ] #specific hits within window
+    hits<- tagdet[dtf>=dtf[i] & tagid$dtf<=tagid$winmax[i], ] #specific hits within window
     #head(tagid[tagid$dtf>=tagid$dtf[i], ], 100)
     #if nrow(hits>=4) then... (need to write code for this qualifier, if_else???)
     if(nrow(hits)>1){
@@ -54,7 +55,7 @@ magicFunc <- function(dat, tagHex, counter){
       # indices<- numeric(0) #make empty df to hold detections retained
       
       for(j in 2:nrow(hits)){
-        candidates<- round(as.numeric(hits$dtf[j]-hits$dtf[1])/counter, digits = 2) #subsubtract time of each det in window from initial and divide by 1:12
+        candidates<- round(as.numeric(hits$dtf[j]-hits$dtf[1])/counter, digits = 2) #subtract time of each det in window from initial and divide by 1:12
         candidates<- candidates[candidates>= tagid$nPRI[i]*0.651 & candidates<= tagid$nPRI[i]*1.3] #constrain values
         retained<- c(retained, candidates)#bind each batch of retained candiate PRIs to a single list
         # indices <- c(indices, rep(j, length(candidates)))
@@ -87,13 +88,13 @@ magicFunc <- function(dat, tagHex, counter){
 
 ###dataFilter
 dataFilter <- function(dat, filterthresh, counter){
-  res <- dat[numeric(0),]
+  res <- dat[1==0] # copies structure
   timer <- 0
   for(i in unique(dat$Hex)){
     ans <- magicFunc(dat, tagHex=i, counter=1:12)
-    ans[!is.na(ans$hitRowNb),]
-    ans2 <- ans[ans$nbAcceptedHitsForThisInitialHit>= filterthresh,]
-    keep <- c(ans2$hitRowNb[ans2$isAccepted], ans2$initialHitRowNb[ans2$isAccepted])
+    ans[!is.na(hitRowNb)]
+    ans2 <- ans[nbAcceptedHitsForThisInitialHit >= filterthresh]
+    keep <- c(ans2[hitRowNb[ans2[isAccepted]]], ans2[initialHitRowNb[ans2[isAccepted]]])
     keep <- keep[!duplicated(keep)]
     ans3 <- dat[dat$Hex==i,][keep,]
     res <- rbind(res, ans3)
@@ -137,32 +138,34 @@ if (DoCleanJST) for(i in list.files("./jst")) {
 
 
 ###Cleaning .SUM files
-cleanSUM < function(i, tags, max_counter) {
+cleanSUM <- function(i, tags, max_counter) {
   #read in each file
-#  dat <- read.csv(paste0("./raw/", i), skip = 8, header=T)  
-
-  dat <- fread(paste0("./raw/", i), skip = 8, header=T)
-    #rename columns to match db
+  dat <- fread(i, skip = 8, header=T)
+  #rename columns to match db
   names(dat)<- c("Detection", "RecSN", "dtf", "Hex", "Tilt", "Volt", "Temp", "Pres", "Amp",
                  "Freq", "Thresh", "nbw", "snr", "Valid")              
   
-    #drop the barker code and the CRC from tagid field & convert to POSIXct note: fractional secons will no longer print, but they are there
-  dat[, Hex := substr(Hex, 4, 7)][, dtf := as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT-8")][, nPRI := 5]
-    #tbl w/ bad detect lines removed, filtered by known taglist
-  dat <- dat[Detection != "      -" & Hex %in% tags[2]]
+  #drop the barker code and the CRC from tagid field & convert to POSIXct note: fractional secons will no longer print, but they are there
+  dat[, Hex := substr(Hex, 4, 7)]
+  dat[, dtf := as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT-8")]
+  dat[, nPRI := 5]
+  #tbl w/ bad detect lines removed, filtered by known taglist
+  dat <- dat[trimws(Detection) != "-" & Hex %in% as.character(unlist(tags[2]))]
   setkey(dat, Hex, dtf)
-  noMP <- dat[, tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex][, winmax:=dtf+nPRI*1.3*max_counter+1]
-  noMP <- noMP[!(tdiff < 0.2), tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex]
-#    while (noMP[tdiff<0.2, .N][1]) { # keep looping until multipath gone
-#    noMP[tdiff<0.2, tdiff := difftime(shift(dtf, n=1, fill=NA),dtf), by=Hex]
+  noMP <- dat[, tdiff := as.numeric(difftime(dtf,shift(dtf, n=1, fill=NA)),units="secs"), by=Hex]
+  noMP[, winmax:=dtf+5*1.3*max_counter+1]
+#  while (noMP[tdiff<0.2, .N][1]) { # keep looping until multipath gone
+    noMP <- noMP[tdiff > 0.2 | is.na(tdiff)][, tdiff := as.numeric(difftime(dtf,shift(dtf, n=1, fill=NA)),units="secs"), by=Hex]
 #  }
   dat5 <- noMP
-  dput(dat5, file = paste0("./cleaned/", dat5[RecSN][1], "_cleaned.txt"))
+  dput(dat5, file = paste0("./cleaned/", dat5[,RecSN][1], "_cleaned.txt"))
 }
 
-if (DoCleanSUM) for(i in list.files("./raw")){
-  if (file.info(i)["isdir"]) next
-  cleanSUM(i, tags, max(counter))
+if (DoCleanSUM) {
+  for(i in list.files("./raw", full.names=TRUE)){
+    if (as.integer(file.info(i)["isdir"])) next
+    cleanSUM(i, tags, max(counter))
+  }
 }
 
 #loop ran, now feed files back into R and see if they look right
@@ -171,8 +174,9 @@ if (DoCleanSUM) for(i in list.files("./raw")){
 # SN6034JST <- dget("./cleaned/2015-6034_cleaned.txt") #looks good to me
 
 ###Filtering Loop
-for(i in list.files("./cleaned")){
-  datos <- dget(paste0("./cleaned/", i))        #read in each file
+for(i in list.files("./cleaned"),full.names=TRUE){
+  if (as.integer(file.info(i)["isdir"])) next
+  datos <- dget(i)        #read in each file
   myResults <- dataFilter(dat=datos, filterthresh=4, counter=1:12)
   rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in% 
                       paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]

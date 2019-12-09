@@ -1,10 +1,10 @@
-# Version GS_TeknoFilter2.0_20171025.R
+# Version GS_TeknoFilter2.1_20171108.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 10/25/2017  Gabriel Singer                                                                 #
-#                         Included in last update: Added cleaning loop for Lotek receiver files                                      #
+#                         Last Updated: 11/08/2017  Gabriel Singer                                                                 #
+#                         Included in last update: Added cleaning loop for Lotek receiver files                                    #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -18,6 +18,8 @@ install.load <- function(package.name)
 
 install.load('tidyverse')
 install.load('readxl')
+install.packages("lubridate")
+
 
 ###counter
 counter <- 1:12
@@ -38,7 +40,7 @@ mode <- function(x, i){
 }
 
 ###load taglist
-tags<- read.csv("./taglist/FriantTaglist.csv", header = T) #list of known Tag IDs
+tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
 tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
 
 ###magicFunction
@@ -175,6 +177,10 @@ timer2 <- 0
 for(i in list.files("./raw/")){
     dat <- read_excel(paste0("./raw/", i))                    #read in each file
     SN <- as.numeric(gsub("Serial Number: ", "", (dat[2, 1]))) #extract serial number of the receiver
+    if(is.na(SN) == TRUE) {
+      SN <- as.numeric(gsub("Serial Number: ", "", colnames(dat[0,1])))
+    }
+    print(SN)
     find.na <- as.numeric(which(is.na(dat[ , 1])))             #find the NA's in Column 1
     start <- max(find.na[find.na <= 100])                      #the value 100 can be set to anything, 
                                                                #it just needs to be less that the total
@@ -186,7 +192,7 @@ for(i in list.files("./raw/")){
     names(dat) <- headers                                      #rename with the right headers
     dat$Hex <- substr(dat$Hex, 5, 8)                           #deal with the TagCode situation
     dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
-    dat <- dat[ ,5:14]                                         #drop the filename and site name columns
+    #dat <- dat[ ,5:15]                                         #drop the filename and site name columns
     dat <- as.tbl(dat)                                         #change object format to tbl 
     dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
     dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
@@ -247,7 +253,7 @@ for(i in list.files("./raw/")){
 ###Filtering Loop
 for(i in list.files("./cleaned")){
   datos <- dget(paste0("./cleaned/", i))        #read in each file
-  myResults <- dataFilter(dat=datos, filterthresh=4, counter=1:12)
+  myResults <- dataFilter(dat=datos, filterthresh=3, counter=1:12)
   rejecteds <- datos[!paste(strftime(datos$dtf, format = "%m/%d/%Y %H:%M:%OS6"), datos$Hex) %in%
                        paste(strftime(myResults$dtf, format = "%m/%d/%Y %H:%M:%OS6"), myResults$Hex),]
   write.csv(myResults, paste0("./accepted/", substr(i, 1, nchar(i)-12), "_accepted.csv"), row.names=F)

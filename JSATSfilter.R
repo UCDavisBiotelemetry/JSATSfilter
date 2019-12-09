@@ -1,16 +1,17 @@
-# Version MP_TeknoFilter2.4.R
+# Version MP_TeknoFilter2.5_20171127.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                            #
-#                                   Last Updated: 11/22/2017 by Matt Pagel                                                         #
+#                                   Last Updated: 11/27/2017 by Matt Pagel                                                         #
 #                                                                                                                                  #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:                                             #
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.                #
 #                      However, the POSIX TZ environment variable uses the opposite convention.                                    #
 #              For example, one might use TZ="JST-9" and TZ="HST10" for Japan and Hawaii, respectively.                            #
 ####################################################################################################################################
-setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/Pat Brandes Filter Data/Matt")
+#setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/Pat Brandes Filter Data/Matt")
+setwd("P:/TempSSD")
 #setwd("C:/Users/chause/Desktop/Pats Filter Data/SJReceieverFilterData")
 TAGFILENAME = "./taglist/Brandes.csv"
 DoCleanJST = FALSE
@@ -19,7 +20,9 @@ DoCleanATS = FALSE
 DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
-FILTERTHRESH = 3
+FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+FLOPFACTOR = 0.006*5 #PNNL spec: 0.006. Arnold: .04*5 = 0.2
+MULTIPATHWINDOW = 0.2 #PNNL spec: 0.156. Arnold: 0.2
 counter <- 1:12
 
 ###Install Load Function
@@ -143,7 +146,7 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
   if (aclist[,.N]>0) {
     setkey(aclist,x)
     res <- tagdet[aclist]
-    res[,(shiftzcols[2:max(shiftz)]):=NULL]
+    res[,(shiftzcols[2:max(shiftz)]):=NULL] # delete columns
     res[,twind:=l1-dtf]
     itr <- as.data.table(merge(x=counter,res))
     itr[,icalc:=round(twind/x,2)]
@@ -155,7 +158,7 @@ magicFunc <- function(dat, tagHex, counter, filterthresh){
     ePRI<-cmod$icalc
     if (is.na(ePRI)) ePRI<-5
     flopintervals <-as.data.table(0:countermax)
-    flopintervals[,x:=V1][,V1:=NULL][,flop:=(x+1)*.006][,flopmin:=x*ePRI-flop][,flopmax:=x*ePRI+flop][,flop:=NULL]
+    flopintervals[,x:=V1][,V1:=NULL][,flop:=(x+1)*FLOPFACTOR][,flopmin:=x*ePRI-flop][,flopmax:=x*ePRI+flop][,flop:=NULL]
     maxflop <- flopintervals[x==12,flopmax]
     windowz <- unique(abbrev[,.(dtf,ewinmax=dtf+maxflop)])
     dett <-windowz[,.(dup=dtf,dd=dtf)]
@@ -252,7 +255,7 @@ cleanJST <- function(i, tags) {
   dat4 <- data.frame(dat3, crazy=c(NA,dat3$Hex[-nrow(dat3)]==dat3$Hex[-1]))
   dat4$tdiff[dat4$crazy==0] <- NA
   dat5 <- dat4[,-14]
-  dat5 <- dat5[dat5$tdiff>0.2 | is.na(dat5$tdiff),]
+  dat5 <- dat5[dat5$tdiff>MULTIPATHWINDOW | is.na(dat5$tdiff),]
 #  dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1], "_cleaned.dput"))
   if (DoSaveIntermediate) fwrite(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", itercount, ")",  "_cleaned.fwri"))
   if (!DoFilterFromSavedCleanedData) {
@@ -285,7 +288,7 @@ cleanSUM <- function() { #set up enclosure
     dat <- dat[trimws(Detection) != "-" & Hex %in% as.character(unlist(tags[2]))]
     setkey(dat, Hex, dtf)
     noMP <- dat[, tdiff := as.numeric(difftime(dtf,shift(dtf, n=1, fill=NA)),units="secs"), by=Hex]
-    noMP <- noMP[tdiff > 0.2 | is.na(tdiff)][, tdiff := as.numeric(difftime(dtf,shift(dtf, n=1, fill=NA)),units="secs"), by=Hex]
+    noMP <- noMP[tdiff > MULTIPATHWINDOW | is.na(tdiff)][, tdiff := as.numeric(difftime(dtf,shift(dtf, n=1, fill=NA)),units="secs"), by=Hex]
     dat5 <- noMP
     itercount<<- itercount+1 #cleanSUM's itercount
     if (DoSaveIntermediate) { 
@@ -446,7 +449,7 @@ if (DoCleanJST) for(i in list.files("./jst")) {
 
 if (DoCleanSUM) {
   fn<-cleanSUM()
-  lf<-list.files("./raw/",pattern="*.SUM", full.names=TRUE, include.dirs = FALSE)
+  lf<-list.files("./raw2/",pattern="*.SUM", full.names=TRUE, include.dirs = FALSE)
   fc<-length(lf)
   tf<-sum.file.sizes(lf)
   pb<-winProgressBar(title="Cleaning SUM files", label="file", min=0, max=tf, initial=0)
@@ -462,7 +465,7 @@ if (DoCleanSUM) {
 
 if (DoCleanATS) {
   fn<-cleanATS()
-  lf<-list.files("./raw/",pattern="*.XLS", full.names=TRUE, include.dirs = FALSE)
+  lf<-list.files("./raw2/",pattern="*.XLS", full.names=TRUE, include.dirs = FALSE)
   tf<-length(lf)
   pb<-winProgressBar(title="Cleaning ATS XLS files", label="file", min=0, max=tf, initial=0)
   j<-0
@@ -477,7 +480,7 @@ if (DoCleanATS) {
 
 if (DoCleanLotek) {
   fn<-cleanLotek()
-  lf<-list.files("./raw/",pattern="*.TXT", full.names=TRUE, include.dirs = FALSE)
+  lf<-list.files("./raw2/",pattern="*.TXT", full.names=TRUE, include.dirs = FALSE)
   tf<-length(lf)
   pb<-winProgressBar(title="Cleaning LoTek TXT files", label="file", min=0, max=tf, initial=0)
   j<-0

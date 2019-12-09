@@ -1,9 +1,9 @@
-# Version MP_TeknoFilter2.5.1.3_CHEdit_20180413_MattComputer.R
+# Version MP_TeknoFilter2.5.1.3_CHEdit_20180511_ColbyComputer.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 04/13/2018 by Colby Hause
+#                                   Last Updated: 05/11/2018 by Colby Hause
 #                                           "Version" 2.5.1.3
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
@@ -19,8 +19,8 @@
 # TODO 20180313: process unknown tags too. Figure out if their PRI is near-integer seconds, less than 1hr, 1m (tester/beacon)
 # TODO 20180313: for RT files, ignore incoming file name...just read them all in to a big array pre-clean.
 # See also TODOs in-line
-setwd("P:/Win8Usr/mpagel/Downloads/filtercode/")
-# TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
+setwd("C:/Users/chause/Desktop/JSATS Filter Data/2018/SJReceiverFilterData/")
+ TAGFILENAME = "taglist/2018FriantTagList.csv" # superseeded by vTAGFILENAME, which has element for default PRI
 vTAGFILENAME = cbind(TagFilename=c("taglist/2018FriantTagList.csv"),PRI=c(5))
 DoCleanJST = TRUE
 DoCleanRT = FALSE

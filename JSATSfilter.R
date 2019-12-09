@@ -1,10 +1,10 @@
-# Version GS_TeknoFilter1.6_20170927.R
+# Version GS_TeknoFilter2.0_20171025.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 09/27/2017  Gabriel Singer                                                                 #
-#                         Included in last update: Added cleaning loop for ATS receiver files                                      #
+#                         Last Updated: 10/25/2017  Gabriel Singer                                                                 #
+#                         Included in last update: Added cleaning loop for Lotek receiver files                                      #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -39,6 +39,7 @@ mode <- function(x, i){
 
 ###load taglist
 tags<- read.csv("./taglist/FriantTaglist.csv", header = T) #list of known Tag IDs
+tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
 
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
@@ -207,19 +208,23 @@ for(i in list.files("./raw/")){
     dput(dat5, file = paste0("./cleaned/", dat5$RecSN[1],"(", timer2, ")",  "_cleaned.txt"))
 }
 
-###Cleaning loop for Lotek Files (reformat times and Hex IDs in excel first)
+###Cleaning loop for Lotek Files 
 timer2 <- 0
 for(i in list.files("./raw/")){
-  dat <- read_excel(paste0("./raw/", i))                    #read in each file
-  SN <- as.numeric(substr(i, 1, 3))                         #extract serial number of the receiver
- 
-  headers <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")#make vector of new headers
-  names(dat) <- headers                                      #rename with the right headers
-  dat$RecSN <- rep(SN, nrow(dat))                            #add SN column 
-  dat <- as.tbl(dat)                                         #change object format to tbl 
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]                #filter receiver file by known taglist
+  dat <- read.table(paste0("./raw/", i), header = F, sep = ",")   #read in each file
+  SN <- as.numeric(regmatches(i,regexpr("[0-9].*[0-9]", i)))               #extract serial number of the receiver
+  headers <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")     #make vector of new headers
+  names(dat) <- headers                                           #rename with the right headers
+  dat$RecSN <- rep(SN, nrow(dat))                                 #add SN column 
+  dat$datetime <- as.POSIXct(round(dat$datetime*60*60*24), 
+                             origin = "1899-12-30", tz = "GMT")
+  dat$Hex <- as.character(dat$Hex)
+  dat$Hex <- substr(dat$Hex, 2, nchar(dat$Hex))
+  
+  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]               #filter receiver file by known taglist (already done in Lotek
+                                                             # software should have the same number of dets)
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
-
+  dat <- as.tbl(dat)                                         #change object format to tbl 
   dat$dtf <- paste0(dat$datetime, substring(dat$FracSec,2))  #paste the fractional seconds to the end of the DT in a new column
   dat$dtf<- ymd_hms(dat$dtf) #convert to POSIXct beware this may change value of 0.0000X
                                                              #to be set to something different for tags with a PRI other than 5)

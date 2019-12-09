@@ -1,3 +1,5 @@
+See also: data.frame branch (old): https://github.com/UCDavisBiotelemetry/JSATSfilter/tree/data.frame
+
 # ChangeLog: data.table branch
 JSATS filtering algorithm: data.table version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.
 Primary author is Matthew Pagel, Gabriel Singer provided early versions and consulted

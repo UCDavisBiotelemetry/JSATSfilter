@@ -1,9 +1,9 @@
-# Version GS_TeknoFilter2.2.1_CHEdit_20180619_ATSfix.R
+# Version GS_TeknoFilter2.2.1_CHEdit_20180626_ATSfix_lotekFixing.R
 ####################################################################################################################################
 #                                                                                                                                  #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description                                  #
 #                         Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017                                              #
-#                         Last Updated: 06/19/2018  Colby Hause version editor, Matt Pagel assist                                  #
+#                         Last Updated: 06/26/2018  Colby Hause version editor, Matt Pagel assist                                  #
 #                                                                                                                                  #
 ####################################################################################################################################
 
@@ -39,9 +39,9 @@ mode <- function(x, i){
 }
 
 ###load taglist
-tags<- read.csv("./taglist/2018FriantTagList.csv", header = T) #list of known Tag IDs
+tags<- read.csv("./taglist/FrianttaglistUCDtags(noBeacon).csv", header = T) #list of known Tag IDs
 tags$Tag.ID..hex.<- as.character(tags$Tag.ID..hex.)       #make sure that class(idHex) is character
-
+#tags$TagID_Hex <- as.character(tags$TagID_Hex)
 ###magicFunction
 magicFunc <- function(dat, tagHex, counter){
   dat5 <- dat
@@ -224,7 +224,7 @@ for(i in list.files("./raw/")){
 timer2 <- 0
 for(i in list.files("./raw/")){
   dat <- read.table(paste0("./raw/", i), header = F, sep = ",")   #read in each file
-  SN <- as.numeric(regmatches(i,regexpr("[0-9].*[0-9]", i)))               #extract serial number of the receiver
+  SN <- as.numeric(regmatches(i,regexpr("[0-9]+", i)))    #extract serial number of the receiver. was "[0-9].*[0-9]" inside regexpr call
   headers <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")     #make vector of new headers
   names(dat) <- headers                                           #rename with the right headers
   dat$RecSN <- rep(SN, nrow(dat))                                 #add SN column 
@@ -233,8 +233,9 @@ for(i in list.files("./raw/")){
   dat$Hex <- as.character(dat$Hex)
   dat$Hex <- substr(dat$Hex, 2, nchar(dat$Hex))
   
-  dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]               #filter receiver file by known taglist (already done in Lotek
-  # software should have the same number of dets)
+  #dat<- dat[dat$Hex %in% tags$Tag.ID..hex., ]               #filter receiver file by known taglist (already done in Lotek
+  dat<- dat[dat$Hex %in% tags$TagID_Hex, ] 
+   # software should have the same number of dets)
   dat$nPRI<- 5                                               #set nPRI (Nominal PRI) for the tag (this will have 
   dat <- as.tbl(dat)                                         #change object format to tbl 
   dat$dtf <- paste0(dat$datetime, substring(dat$FracSec,2))  #paste the fractional seconds to the end of the DT in a new column

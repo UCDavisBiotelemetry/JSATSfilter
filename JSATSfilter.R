@@ -1,10 +1,10 @@
-# Version MP_TeknoFilter2.5.1.5_20180705.R
+# Version MP_TeknoFilter2.5.2_20180709.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-07-05 by Matt Pagel
-#                                  Version 2.5.1.5 (2.6 functions inactive)
+#                                   Last Updated: 2018-07-09 by Matt Pagel
+#                                  Version 2.5.2 (2.6 functions inactive)
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -22,25 +22,25 @@
 
 # daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
-setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
+#setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 memory.limit(44000)
 # TAGFILENAME = "taglist/t2018TagInventory.csv" # superseeded by vTAGFILENAME, which has element for default PRI
 # 2017
- vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
+# vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-# vTAGFILENAME = cbind(TagFilename=c("taglist/t2018TagInventory.csv","taglist/qMultiAgencyTagList.csv","taglist/PckTags.csv"),PRI=c(5,5,3))
-DoCleanJST = FALSE
+vTAGFILENAME = cbind(TagFilename=c("taglist/2018FriantTagList.csv"),PRI=c(5))
+ DoCleanJST = FALSE
 DoCleanRT = FALSE
 DoCleanPrePre = FALSE
 DoCleanShoreRT = FALSE
-DoCleanSUM = FALSE
+DoCleanSUM = TRUE
 DoCleanATS = FALSE
 DoCleanLotek = FALSE
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
-FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
 FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
 FLOPFACTOR_2.6 = 0.006 
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
@@ -466,15 +466,15 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
     tcn = TagColName[which(TagColName %in% heads)[1]] # prioritize the first in priority list
     pcn = priColName[which(priColName %in% heads)[1]] # prioritize the first in priority list
     gcn = grpColName[which(grpColName %in% heads)[1]]
-    if (is.na(pcn) || length(pcn)<1 ) pcn = NULL
-    if (is.na(gcn) || length(gcn)<1 ) gcn = NULL
-    if (pcn == "NA") pcn = NULL
+    if (is.null(pcn) || is.na(pcn) || length(pcn)<1 || pcn=="NA") pcn = NULL
+    if (is.null(gcn) || is.na(gcn) || length(gcn)<1 ) gcn = NULL
+    #if (pcn == "NA") pcn = NULL
     tags <- tags[,c(tcn,pcn,gcn),with=F]
-    if (length(pcn)<1) {
+    if (is.null(pcn) || length(pcn)<1) {
       tags[,nPRI:=as.numeric(pv)]
       pcn = "nPRI"
     }
-    if (length(gcn)<1) {
+    if (is.null(gcn) || length(gcn)<1) {
       fn<-as.character(basename(fn))
       tags[,rel_group:=fn]
       gcn = "rel_group"
@@ -599,15 +599,15 @@ cleanInnerWrap <-function(...) {
     }
     setkey(dat2, RecSN, Hex, dtf)
     dat2[,tlag:=shift(.SD,n=1L,fill=NA,type="lag"), by=.(Hex,RecSN),.SDcols="dtf"]
-    dat3<-na.omit(dat2,cols=c("tlag")) # TODO 20180313 need to verify this doesn't drop the first for a tag
-    if (nrow(dat3)==0) return(F)
-    dat3[,c("SQSQueue","SQSMessageID","DLOrder","TxAmplitude","TxOffset","TxNBW"):=NULL] # will give warnings, not error if columns missing
-    setkey(dat3,RecSN,Hex,dtf)
+    # dat3<-na.omit(dat2,cols=c("tlag")) # TODO 20180313 need to verify this doesn't drop the first for a tag.  It must, as it is missing in cleaned (20180709)....
+    if (nrow(dat2)==0) return(F) #was dat3...should this be <filterthresh?
+    dat2[,c("SQSQueue","SQSMessageID","DLOrder","TxAmplitude","TxOffset","TxNBW"):=NULL] # will give warnings, not error if columns missing, was dat3
+    setkey(dat2,RecSN,Hex,dtf) #was dat3
     # calculate tdiff, then remove multipath
-    dat4 <- dat3[,tdiff:=difftime(dtf,tlag)][tdiff>MULTIPATHWINDOW | tdiff==0 | is.na(tdiff)]
+    dat4 <- dat2[,tdiff:=difftime(dtf,tlag)][tdiff>MULTIPATHWINDOW | tdiff==0 | is.na(tdiff)]
     if (nrow(dat4)==0) return(F)
     # dat4[dtf==tlag,tlag:=NA] # if we want to set the first lag dif to NA rather than 0 for the first detection of a tag
-    rm(dat3)
+    # rm(dat3)
     setkey(dat4,RecSN,Hex,dtf)
     setkey(dat ,RecSN,Hex,dtf)
     keepcols = unlist(list(colnames(dat),"nPRI")) # use initial datafile columns plus the nPRI column from the taglist file

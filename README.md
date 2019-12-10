@@ -4,6 +4,40 @@ See also: data.frame branch (old): https://github.com/UCDavisBiotelemetry/JSATSf
 JSATS filtering algorithm: data.table version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.
 Primary author is Matthew Pagel, Gabriel Singer provided early versions and consulted
 
+Version 2.7.1	2019-08-06
+* Added a function to look at last n detections for each tag rather than the whole set: used for tag life studies
+* Added lookup for mimic type 2, fixed calculation for M2s
+* Deactivate mimic determination as part of the main pipeline. Target version 3.0
+* Added release group information retention in finalized data
+* Fixed a bug for condition where there were multiple receivers merged into a single input file
+
+Version 2.7	2019-06-25
+* Function and header constant reorg.
+* Addition of checksum calculation for mimic determination
+* ERDDAP file processing from downloaded CSV; code replaces old differentiation of files by extension and folder only
+* Switch `=` assignments to `<-`
+
+Version 2.6.2	2019-03-26
+* Cleanup: remove pre-2.6 code
+* Fix duplication issue caused by identical timestamps for different tags on same Lotek receiver
+* Memory use reduction in filtering
+
+Version 2.6.1.4	2018-10-03
+* Check Tekno data files to verify that "valid" column values are "1" and not "0"
+* Expand Lotek serial number identification from filenames
+
+Version 2.6.1.2	2018-09-26
+* Internal documentation cleanup, some variable names changed
+* Add makewinpath function to reverse `\` in file paths in script window of RStudio
+
+Version 2.6.1.1	2018-09-24
+* Enforces requirement that hits to validate a window have to happen within the first 12 PRI cycles (rather than 1.3 * nPRI * 12)
+
+Version 2.6.1	2018-09-20
+* MAJOR REWRITE activated - now mirrors FAST algorithm in considering ePRI per window and per tag rather than just per tag
+* Filter function is supplied one hex tag at a time, simplifies filter
+* Zero valid hit detection/early exit
+
 Version 2.5.3.2 2018-07-16
 * Reorganization of runtime constants
 * Added function to extract the serial number from the filename

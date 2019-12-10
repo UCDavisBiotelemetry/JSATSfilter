@@ -151,7 +151,7 @@ Version 1.4a (inoperative) 2017-08-31
 * Changed loops to functions called from simpler loops, with redundant items removed
 * SUM files (in addition to JSTs) checked for multipath
 
-data.frame ancestors (Gabe Singer author)
+## data.frame ancestors (Gabe Singer author)
 **Version 1.3b	2017-08-24**
 * Adds in a "mode" function for determining the most frequent PRI encountered in a given window.
 * Reads in a taglist file

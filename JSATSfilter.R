@@ -1,21 +1,20 @@
-# Version UCDTeknoFilter2.6.1.1_20180924.R
-###################################################################################################################
-#
-#                         Tag Filter for Teknologic Receiver Files converted from CBR description
-#                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-09-24 by Matt Pagel
-#                                    The much anticipated Version 2.6.1.1!!!
-#
-#                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
-#        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
-#                      However, the POSIX TZ environment variable uses the opposite convention.
-#              For example, one might use TZ="JST-9" and TZ="HST10" for Japan and Hawaii, respectively.
-###################################################################################################################
+# Version UCDTeknoFilter2.6.1.2_20180926.R
+############################################################################################################
+#            Tag Filter for JSATS Receiver Files converted from CBR description of FAST algorithm
+#                 Based on algorithm interpretation by Gabe Singer (GS) and Matt Pagel (MP)
+#                               Contact/primary author: Matt Pagel @ UCDavis
+# 
+#                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DS)
+#                       Contributions made by: MP, GS, Colby Hause, DS, Arnold Ammann
+#                                 Version 2.6.1.2. Updated 2018-09-26 by MP
+############################################################################################################
+#                          Special Note from http://www.twinsun.com/tz/tz-link.htm:
+# Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
+#               However, the POSIX TZ environment variable uses the opposite convention.
+#         For example, one might use TZ="JST-9" and TZ="HST10" for Japan and Hawaii, respectively.
+############################################################################################################
 
-# TODO 20180313: File type cleaner consolidation...should just need a header row specified, everything else should be the same.
-# TODO 20180313: re-verify non-preprocessed RT data
-# TODO 20180313: check timestamps for SUM JST XLS TXT files
-# TODO 20180313: do mode on a per-detection cluster basis, eliminate mode/getmode as outmoded, document max drift between clusters (known as version 2.6)
+# TODO 20180313: Document max drift between window clusters
 # TODO 20180313: process unknown tags too. Figure out if their PRI is near-integer seconds, less than 1hr, 1m (tester/beacon)
 # TODO 20180313: for RT files, ignore incoming file name...just read them all in to a big array pre-clean.
 # See also TODOs in-line
@@ -23,40 +22,62 @@
 # daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
 #setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
-setwd("P:/TempSSD/Files for Matt/2018 raw data/singleFile/MattAlgo")
+setwd("P:/TempSSD/Files for Matt/")
 memory.limit(44000)
 # 2017
 # vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-vTAGFILENAME = cbind(TagFilename=c("../../../2018 raw data/tag list/t2018TagInventory.csv","../../../2018 raw data/tag list/qMultiAgencyTagList.csv","../../../2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
+vTAGFILENAME = cbind(TagFilename=c("2018 raw data/tag list/t2018TagInventory.csv","2018 raw data/tag list/qMultiAgencyTagList.csv","2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
 
 DoCleanPrePre = FALSE
 DoCleanRT = FALSE
 DoCleanShoreRT = FALSE
+
 DoCleanJST = FALSE
-DoCleanSUM = FALSE
-DoCleanLotek = TRUE
-DoCleanATS = FALSE
+DoCleanSUM = TRUE
+DoCleanLotek = FALSE
+DoCleanATS = TRUE
 
 RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
 RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
 SSRT_Dir = "P:/Win8Usr/mpagel/Downloads/UC.Davis"
-NON_RT_Dir = "." # "2018 Raw Data/data/"
+
+RAW_DATA_DIR = "2018 Raw Data/data/"
 TEKNO_SUBDIR = "Tekno/" # or "" if not in a subdirectory of data directory
 ATS_SUBDIR = "ATS/" # or ""
-LOTEK_SUBDIR = "" # "Lotek/cleaned with UCD tags/" # or ""
+LOTEK_SUBDIR = "Lotek/cleaned with UCD tags/" # "Lotek/cleaned with UCD tags/" # or ""
 
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
-FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
-FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
+FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+# FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
 FLOPFACTOR_2.6 = 0.006 
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
 COUNTERMAX = 12 # PNNL spec: 12
 
+add_contextmenu_winpath<-function() {
+  .rs.addJsonRpcHandler("convert_windows_path_to_R_style",makewinpath)
+}
 
+makewinpath<-function() {
+  install.load <- function(package.name)
+  {
+    if (!require(package.name, character.only=T)) install.packages(package.name)
+    library(package.name, character.only=T)
+  }
+  try({
+    install.load("rstudioapi")
+    adc<-rstudioapi::getSourceEditorContext()
+    ps<-rstudioapi::primary_selection(adc)
+    t<-ps$text
+    # t<-gsub(", ", "", toString(paste0(read.table(t, sep="\\", stringsAsFactors=F)[1,], sep="/")))
+    t<-gsub("\\\\","/",t)
+    rstudioapi::modifyRange(ps$`range`,t,adc$id)
+    rstudioapi::setSelectionRanges(ps$`range`,adc$id)
+  })
+}
 ###Install Load Function
 install.load <- function(package.name)
 {
@@ -689,7 +710,7 @@ if (DoCleanJST) {
   Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
   mergeFrac = "FracSec"
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,TEKNO_SUBDIR), filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -706,7 +727,7 @@ if (DoCleanSUM) {
   Rec_dtf_Hex_strings = c("Serial Number","Date Time","TagCode")
   mergeFrac = NULL
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,TEKNO_SUBDIR), filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -724,7 +745,7 @@ if (DoCleanLotek) {
   Rec_dtf_Hex_strings = c(NA, "datetime", "Hex")
   mergeFrac = "FracSec"
   fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(NON_RT_Dir,LOTEK_SUBDIR), filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
+  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,LOTEK_SUBDIR), filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
                     Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
@@ -734,9 +755,9 @@ if (DoCleanLotek) {
 # ATS autonomous
 if (DoCleanATS) {
   fn<-cleanATSxls() # converts Excel files to a CSV-style file
-  cleanWrapper(fn, tags, precleanDir = paste0(NON_RT_Dir,ATS_SUBDIR), filePattern = "*.XLS[X]?$", wpbTitle = "Converting ATS XLS(x) files")
+  cleanWrapper(fn, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "*.XLS[X]?$", wpbTitle = "Converting ATS XLS(x) files")
   fn<-cleanATScsv() # clean ATS CSVs
-  cleanWrapper(fn, tags, precleanDir = paste0(NON_RT_Dir,ATS_SUBDIR), filePattern = "(*.XTMP)|(*.CSV)|(*.ATS_CSV)$", wpbTitle = "Cleaning ATS CSV files")
+  cleanWrapper(fn, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "(*.XTMP)|(*.CSV)|(*.ATS_CSV)$", wpbTitle = "Cleaning ATS CSV files")
 }
 
 ###Do the filtering loop

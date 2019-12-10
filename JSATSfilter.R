@@ -1,4 +1,4 @@
-# Version UCDTeknoFilter2.7.0_20190625_2019data_ERDDAP.R
+# Version UCDTeknoFilter2.7.1_20190806_2019data_Coleman.R
 ############################################################################################################
 #            Tag Filter for JSATS Receiver Files converted from CBR description of FAST algorithm
 #                 Based on algorithm interpretation by Gabe Singer (GS) and Matt Pagel (MP)
@@ -6,7 +6,7 @@
 # 
 #                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DC)
 #                       Contributions made by: MP, GS, Colby Hause, DC, Arnold Ammann
-#                                 Version 3.0. Updated 2019-06-25 by MP
+#                                 Version 2.7.2. Updated 2019-08-06 by MP
 ############################################################################################################
 #                          Special Note from http://www.twinsun.com/tz/tz-link.htm:
 # Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -21,7 +21,7 @@
 # See also TODOs in-line
 
 
-setwd("D:/tempssd2/testScript")
+setwd("D:/tempssd2/Coleman/06192019")
 memory.limit(44000)
 
 install.load <- function(package.name)
@@ -38,23 +38,23 @@ install.load('tidyverse')
 install.load('lubridate')
 install.load('data.table')
 
-vTAGFILENAME <- data.table(TagFilename=c("tags/2019TEfishRice.csv","tags/qPRIcsvColeman.csv","tags/qPRIcsvColemanTank.csv","tags/qPRIcsvRice.csv","tags/qPRIcsvSJScarf.csv"),PRI=c(5,5,5,5,5)) # qPRIcsv_SJScarf_up.txt
+vTAGFILENAME <- data.table(TagFilename=c("tags/t2019TagInventory_Coleman.csv"),PRI=c(5)) # qPRIcsv_SJScarf_up.txt
 
 DoCleanPrePre <- FALSE
 DoCleanRT <- FALSE
-DoCleanShoreRT <- TRUE
+DoCleanShoreRT <- FALSE
 
 DoCleanJST <- FALSE
-DoCleanSUM <- TRUE
+DoCleanSUM <- FALSE
 DoCleanLotek <- TRUE
-DoCleanATS <- TRUE
+DoCleanATS <- FALSE
 DoCleanERDDAP <- TRUE
 
 RT_Dir <- "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
 RT_File_PATTERN <- "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
 SSRT_Dir <- "D:/tempssd2/SS/filtered/"
 
-RAW_DATA_DIR <- "./"
+RAW_DATA_DIR <- "raw/"
 TEKNO_SUBDIR <- "./" # or "" if not in a subdirectory of data directory
 ATS_SUBDIR <- "" # or ""
 LOTEK_SUBDIR <- "" # "Lotek/cleaned with UCD tags/" # or ""
@@ -196,6 +196,17 @@ recheckTekno <- function() { # not hooked into any other function. Will not auto
   return(unique(invalid,by="Hex")[,.(Hex,realTag,tot,badTagIDs)])
 }
 
+lastXdetsPerTag <- function(fileName, num_dets = 10000) { # used for TagEffects tanks (lotek receivers primarily)
+  xlmax<-1048576-1 # 1 header line
+  fd<-fread(fileName)
+  fd[,dtf:=as.POSIXct(dtf,format="%Y-%m-%d %H:%M:%S",tz="Etc/GMT+8")+FracSec]
+  setkey(fd,RecSN,Hex,dtf)
+  fd2<-fd[,tail(.SD, num_dets), by=.(RecSN,Hex)]
+  fd2[,dtf:=as.character(strftime(dtf,tz="Etc/GMT+8",format="%Y-%m-%d %H:%M:%OS6"))]
+  if (fd2[,.N] > xlmax) warning(paste0('number of lines in file ',filename,' (',fd2[,.N],') exceeds MS Excel limit of ',xlmax))
+  fwrite(fd2, paste0(fileName,'_last',num_dets,'Dets.csv'))
+}
+
 find_ePRI <- function(obj) {
   N<-nrow(obj)
   tmp<-data.table(merge.data.frame(x=1:COUNTERMAX,obj))
@@ -214,8 +225,7 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
   dat[,temporary:=as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")] # dput file stores datestamp in this basic format
   if (is.na(dat[,.(temporary)][1])) dat[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # fwri file stores as UTC in this format ...was in this doc as %S.%OSZ
   else dat[,dtf:=temporary]
-  dat[,temporary:=NULL]
-  dat[,winmax:=dtf+((nPRI*1.3*countermax)+1)]
+  dat[,temporary:=NULL][,winmax:=dtf+((nPRI*1.3*countermax)+1)]
   wind_range <- dat[,.(dtf,winmax,nPRI)]
   setkey(wind_range,dtf,winmax)
   fit <- dat[,.(dup=dtf,hit=dtf)]
@@ -235,7 +245,7 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
   earlyReject <- fo_windows_full[!windHits][hitsInWindow==1,hitsInWindow:=0][,`:=`(isAccepted=FALSE,ePRI=NA)][,.(hit,dtf,isAccepted,hitsInWindow,ePRI)]
   LT <- rbind(earlyReject,windHits[,.(hit,dtf,isAccepted,hitsInWindow,ePRI)])
   setkey(LT,dtf,hit)
-  setnames(LT,c("hit","dtf","isAccepted","hitsInWindow","ePRI"),c("hit","initialHit","isAccepted","nbAcceptedHitsForThisInitialHit","ePRI"))
+  setnames(LT,c("dtf","hitsInWindow"),c("initialHit","nbAcceptedHitsForThisInitialHit"))
   return(LT)
 }
 
@@ -343,8 +353,16 @@ makeMask <- function(y,z) {
   bitwOr(as.integer(fillUpToBit(as.binary(1,logic=TRUE),n=y+z,TRUE)),as.integer(fillUpToByte(as.binary(0),size=4)))
 }
 
+lookupMimicType2DT <- function(DT, m2t = MIM2) {
+  setkey(DT, TagID_Hex)
+  # setkey(m2t, Code)
+  DT[m2t,Mimic2:=i.M2,on="TagID_Hex==Code"][m2t,M2Inv:=i.Code,on="TagID_Hex==M2"]
+
+}
+
 calculateMimicType2 <- function(FullTag) {
   install.load("binaryLogic")
+  if (nchar(FullTag)==4) FullTag<-calculateFullTag(FullTag)
   B <- as.hexmode(substr(FullTag,1,2))
   lb <- length(as.binary(B))
   Iv <- bitwXor(B,as.hexmode("7F"))
@@ -354,8 +372,11 @@ calculateMimicType2 <- function(FullTag) {
   resr <- c()
   mask <- makeMask(lb,0) # bitwOr(as.integer(fillUpToBit(as.binary(1),lb,TRUE)),as.integer(fillUpToByte(binaryLogic::as.binary(0),size=4)))
   cftv <- bitwShiftR(cft,seq(0,31))
-  resf <- which(bitwAnd(cftv,mask)==B)-1
-  resr <- which(bitwAnd(cftv,mask)==Iv)-1
+  resf <- which(bitwAnd(bitwXor(cftv,B),mask)==0)-1
+  resr <- which(bitwAnd(bitwXor(cftv,Iv),mask)==0)-1
+  browser()
+  # print(resf)
+  # print(resr)
   fVect <- c()
   rVect <- c()
   if (length(resf)) {
@@ -427,7 +448,8 @@ calculateAllMimics <- function(DT) {
   setDT(DT)
   install.load("binaryLogic")
   DT[,FullTag:=sapply(TagID_Hex,calculateFullTag,Barker="72",Seed="00")]
-  DT[,Mimic1:=paste0(format.hexmode(as.hexmode(substr(TagID_Hex,1,2)),width=2,upper.case=TRUE),format.hexmode(bitwXor(as.hexmode(substr(TagID_Hex,3,4)),as.hexmode("3F")),width=2,upper.case=TRUE))][,Mimic2:=sapply(FullTag,calculateMimicType2)][,Mimic3:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("0001")),width=4,upper.case=TRUE)][,Mimic4:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("3FFF")),width=4,upper.case=TRUE)]
+  # browser()
+  DT[,Mimic1:=paste0(format.hexmode(as.hexmode(substr(TagID_Hex,1,2)),width=2,upper.case=TRUE),format.hexmode(bitwXor(as.hexmode(substr(TagID_Hex,3,4)),as.hexmode("3F")),width=2,upper.case=TRUE))][m2t,Mimic2:=i.M2,on="TagID_Hex==Code"][m2t,M2Inv:=i.Code,on="TagID_Hex==M2"][,Mimic3:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("0001")),width=4,upper.case=TRUE)][,Mimic4:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("3FFF")),width=4,upper.case=TRUE)] # [,Mimic2:=sapply(FullTag,calculateMimicType2)]
   return(DT) # DT
 }
 
@@ -438,11 +460,9 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
   ret <- data.frame(TagID_Hex=character(),nPRI=numeric(),rel_group=character())
   setDT(ret,key="TagID_Hex")
   for (i in 1:nrow(vTagFileNames)) {
-    #    browser()
-    fileName <- vTagFileNames[i,TagFilename]
+    fileName <- as.character(vTagFileNames[i,TagFilename])
     if (!file.exists(fileName)) { next }
     pv <- as.numeric(vTagFileNames[i,PRI])
-    #    browser()
     tags <- fread(file=fileName, header=TRUE, stringsAsFactors=FALSE, blank.lines.skip=TRUE) # list of known Tag IDs
     heads <- names(tags)
     tcn <- TagColName[which(TagColName %in% heads)[1]] # prioritize the first in priority list
@@ -463,15 +483,15 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
     setnames(tags,c(tcn,pcn,gcn),c("TagID_Hex","nPRI","rel_group"))
     tags[,nPRI:=as.numeric(nPRI)]
     tags[is.na(nPRI) | nPRI==0, nPRI:=pv]
-    tags<-unique(tags,by="TagID_Hex")
+    tags<-unique(tags[nchar(TagID_Hex)>0],by="TagID_Hex")
     setkey(tags,TagID_Hex)
     ret <- rbindlist(list(ret, tags[!ret]),use.names=TRUE)
   }
   setDT(ret,key="TagID_Hex")
   ret[,TagID_Hex:=substr(as.character(TagID_Hex),1,4)] # drop factors
   # print(ret)
-  print("Read in tags. Calculating CRC checksum and potential mimic codes as per mimic_decodes_removal_process_10242012_0.doc")
-  calculateAllMimics(ret)
+  # print("Read in tags. Calculating CRC checksum and potential mimic codes as per mimic_decodes_removal_process_10242012_0.doc")
+  # calculateAllMimics(ret)
   # ret[,FullTag:=calculateFullTag(TagID_Hex,Barker="72",Seed="00")][,Mimic1:=sapply(TagID_Hex,calculateMimicType1)][,Mimic2:=sapply(TagID_Hex,calculateMimicType2)][,Mimic3:=sapply(TagID_Hex,calculateMimicType3)][,Mimic4:=sapply(TagID_Hex,calculateMimicType1)]
   # print(ret)
   return(ret)
@@ -862,7 +882,7 @@ cleanInnerWrap <-function(...) {
       dat[,dtf:=as.character(lotekDateconvert(as.numeric(dtf),tz),format="%Y-%m-%d %H:%M:%S",tz=tz)]
       dtFormat="%Y-%m-%d %H:%M:%OS"
     }
-    # combine the DT and FracSec columns into a single time column
+	suppressWarnings(dat[,Dec:=NULL])
     colnamelist<-as.data.table(names(dat))
     # browser()
     if (colnamelist[V1=="valid",.N] > 0) {
@@ -870,6 +890,7 @@ cleanInnerWrap <-function(...) {
         dat<-dat[valid!=0]
       }
     }
+    # combine the DT and FracSec columns into a single time column
     if (length(mergeFrac)>0) {
       dat[,iznumb:=ifelse(is.na(
         tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
@@ -892,48 +913,42 @@ cleanInnerWrap <-function(...) {
     # convert time string into POSIXct timestamp
     dat[,dtf:=as.POSIXct(dtf, format = dtFormat, tz=tz)]
     setkey(tags,TagID_Hex)
-    setindex(tags,Mimic1,Mimic2,Mimic3,Mimic4)
-    # browser()
     dat2<-dat[tags,nomatch=0] # bring in the nominal PRI (nPRI)
-    browser()
-    dat2_Ms <- dat[tags,on=Hex %in% c("Mimic1","Mimic2","Mimic3","Mimic4")]
-    setkey(tags, Mimic1)
-    dat2_M1 <- dat[tags,nomatch=0]
-    # setkey(tags, Mimic2
     if (nrow(dat2)==0) {
       print(paste0("no matching tag hits in raw file: ",i))
       print(paste0("First tags file (",as.character(tags[,rel_group][1]),"). All tags regardless of file:"))
       print(as.vector(unique(tags[,TagID_Hex]),mode="character"))
       print("Data file tags")
       print(as.vector(unique(dat[,Hex]),mode="character"))
+      print("Were the tags files read in successfully for this study?")
       return(F)
     }
     setkey(dat2, RecSN, Hex, dtf)
     dat2[,tlag:=shift(.SD,n=1L,fill=NA,type="lag"), by=.(Hex,RecSN),.SDcols="dtf"]
     if (nrow(dat2)==0) return(F) # should this be <filterthresh?
-    suppressWarnings(dat2[,c("SQSQueue","SQSMessageID","DLOrder","TxAmplitude","TxOffset","TxNBW"):=NULL]) # kill warnings of non-existing columns
-    setkey(dat2,RecSN,Hex,dtf)
+    suppressWarnings(dat2[,c("SQSQueue","SQSMessageID","DLOrder","TxAmplitude","TxOffset","TxNBW", "Dec", "SigStr", "fullHex", "CRC", "valid", "TagAmp", "NBW"):=NULL]) # kill warnings of non-existing columns
+    # setkey(dat2,RecSN,Hex,dtf) # should still be set
     # calculate tdiff, then remove multipath
     dat4 <- dat2[,tdiff:=difftime(dtf,tlag)][tdiff>MULTIPATHWINDOW | tdiff==0 | is.na(tdiff)]
     if (nrow(dat4)==0) return(F)
     rm(dat2)
     # dat4[dtf==tlag,tlag:=NA] # if we want to set the first lag dif to NA rather than 0 for the first detection of a tag
-    setkey(dat4,RecSN,Hex,dtf)
-    setkey(dat ,RecSN,Hex,dtf)
-    keepcols <- unlist(list(colnames(dat),"nPRI")) # use initial datafile columns plus the nPRI column from the taglist file
+    # setkey(dat4,RecSN,Hex,dtf) # inherited from dat2
+    setkey(dat, RecSN, Hex, dtf)
+    keepcols <- unlist(list(names(dat),"nPRI","rel_group")) # use initial datafile columns plus the nPRI column from the taglist file
     dat5 <- unique(dat[dat4,keepcols,with=FALSE]) # too slow? try dat[dat4] then dat5[,(colnames(dat5)-keepcols):=NULL,with=FALSE]
     setkey(dat5,RecSN,Hex,dtf)
     rm(dat4)
     # "Crazy" in Damien's original appears to have just been a check to see if matches previous tag, if not discard result of subtraction
     # Shouldn't be needed for data.table.
-    dat5[is.null(RecSN) || is.na(RecSN) || RecSN==9000 || RecSN=="" || RecSN==0,RecSN:=extractSNfromFN(i)]
+    dat5[is.null(RecSN) | is.na(RecSN) | RecSN==9000 | RecSN=="" || RecSN==0,RecSN:=extractSNfromFN(i)]
     SNs<-unique(dat5[,RecSN])
     for(sn in SNs) { # don't trust the initial file to have only a single receiver in it
       itercount <<- itercount + 1
       # fwri format stores timestamps as UTC-based (yyyy-mm-ddTHH:MM:SS.microsZ)
       if (DoSaveIntermediate) fwrite(dat5[RecSN==sn], file = paste0("./cleaned/", foutPrefix, sprintf("%04d",itercount), "_", sn,  "_cleaned.fwri"))
+      if (!DoFilterFromSavedCleanedData) filterData(dat5[RecSN=sn])
     }
-    if (!DoFilterFromSavedCleanedData) filterData(dat5)
     rm(dat5)
   }
 }
@@ -1054,7 +1069,7 @@ if (DoCleanJST) {
   dtFormat <- "%m/%d/%Y %H:%M:%OS"
   nacols <- NULL
   foutPrefix <- "JT"
-  inferredHeader <- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
+  inferredHeader <- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "valid", "TagAmp", "NBW")
   Rec_dtf_Hex_strings <- c("RecSN", "DT", "Hex")
   mergeFrac <- "FracSec"
   funName <- cleanInnerWrap()

@@ -1,12 +1,12 @@
-# Version UCDTeknoFilter2.6.1.2_20180926.R
+# Version UCDTeknoFilter2.6.1.4_20190123_BeaconsOnly.R
 ############################################################################################################
 #            Tag Filter for JSATS Receiver Files converted from CBR description of FAST algorithm
 #                 Based on algorithm interpretation by Gabe Singer (GS) and Matt Pagel (MP)
 #                               Contact/primary author: Matt Pagel @ UCDavis
 # 
-#                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DS)
+#                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DC)
 #                       Contributions made by: MP, GS, Colby Hause, DS, Arnold Ammann
-#                                 Version 2.6.1.2. Updated 2018-09-26 by MP
+#                                 Version 2.6.1.4. Updated 2019-01-23 by MP
 ############################################################################################################
 #                          Special Note from http://www.twinsun.com/tz/tz-link.htm:
 # Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -19,15 +19,16 @@
 # TODO 20180313: for RT files, ignore incoming file name...just read them all in to a big array pre-clean.
 # See also TODOs in-line
 
-# daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
+# TODO         : implement daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
-#setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
 setwd("P:/TempSSD/Files for Matt/")
 memory.limit(44000)
 # 2017
 # vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-vTAGFILENAME = cbind(TagFilename=c("2018 raw data/tag list/t2018TagInventory.csv","2018 raw data/tag list/qMultiAgencyTagList.csv","2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
+# vTAGFILENAME = cbind(TagFilename=c("2018 raw data/tag list/t2018TagInventory.csv","2018 raw data/tag list/qMultiAgencyTagList.csv","2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
+
+vTAGFILENAME = cbind(TagFilename=c("tag lists/UCD/2017Beacons.csv"),PRI=c(60))
 
 DoCleanPrePre = FALSE
 DoCleanRT = FALSE
@@ -35,27 +36,27 @@ DoCleanShoreRT = FALSE
 
 DoCleanJST = FALSE
 DoCleanSUM = TRUE
-DoCleanLotek = FALSE
+DoCleanLotek = TRUE
 DoCleanATS = TRUE
 
 RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
 RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
 SSRT_Dir = "P:/Win8Usr/mpagel/Downloads/UC.Davis"
 
-RAW_DATA_DIR = "2018 Raw Data/data/"
+RAW_DATA_DIR = "2017 Raw Data/"
 TEKNO_SUBDIR = "Tekno/" # or "" if not in a subdirectory of data directory
 ATS_SUBDIR = "ATS/" # or ""
 LOTEK_SUBDIR = "Lotek/cleaned with UCD tags/" # "Lotek/cleaned with UCD tags/" # or ""
 
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
-DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
+DoFilterFromSavedCleanedData = FALSE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
-FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
-# FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
+FILTERTHRESH = 3 # FAST spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+# FLOPFACTOR = 0.155 # FAST "spec": 0.006. Arnold: .04*5 = 0.2
 FLOPFACTOR_2.6 = 0.006 
-MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
-COUNTERMAX = 12 # PNNL spec: 12
+MULTIPATHWINDOW = 0.2 # FAST spec: 0.156. Arnold: 0.2
+COUNTERMAX = 12 # FAST spec: 12
 
 add_contextmenu_winpath<-function() {
   .rs.addJsonRpcHandler("convert_windows_path_to_R_style",makewinpath)
@@ -156,9 +157,42 @@ sum.file.sizes <- function(DT) {
 
 extractSNfromFN <-function(i) {
   # get it from the first number in the filename after the last \ / or ), spanning a dash if present
-  SN <- as.numeric(gsub("([A-Za-z 0-9/()-]*[/\\()]){0,1}([A-Za-z_]{0,20}|[()]){0,5}([0-9]{1,6})(-([0-9]{0,4})[0-9]{0,20})?[A-Za-z._-][^)\t\n-]*$", "\\3\\5", i))
-  if (is.null(SN) || is.na(SN) || !is.numeric(SN) || SN==9000) SN<-0
+  SN <- as.numeric(gsub("([A-Z 0-9/()-]*[/\\()]){0,1}([A-Z_]{0,20}|[()]){0,5}([0-9]{1,6})(-([0-9]{0,4})[0-9]{0,20})?[A-Z._-][^)\t\n-]*$", "\\3\\5", i, ignore.case=TRUE))
+  if (is.null(SN) || is.na(SN) || !is.numeric(SN) || SN==9000) { # maybe Lotek from Arnold
+    SN <- gsub("([A-Z 0-9/\\()_-]*[/\\()]){0,1}([A-Z_]{0,20}|[()]){0,5}([0-9]{1,6})([_-]([0-9]{0,5})[0-9]{0,20})?[A-Z._-][^)\t\n-]*$", "\\5", i, ignore.case=TRUE)
+    if (is.null(SN) || is.na(SN) || !grepl("^[0-9]*$",SN) || SN==9000) SN<-0
+  }
   return(SN)
+}
+
+recheckTekno <- function() {
+  dat<-data.table()
+  for(i in list.files("./accepted",full.names=TRUE)){
+    id<-as.logical(file.info(i)["isdir"])
+    if (is.null(id) || is.na(id)) id <- TRUE
+    if (id==TRUE) next
+    # if it's a dput file, read it back in, but make sure there's no funky memory addresses that were saved by data.table
+    if (endsWith(i,'.dput') || endsWith(i,'.txt')) datos <-as.data.table(dtget(i))
+    if (endsWith(i,'.csv')) { # if it was written to disk with fwrite, use the faster fread, but make sure to set the datetime stamps
+      datos <-fread(i)
+      # datos[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%d %H:%M:%OSZ", tz="UTC")] # %OS6Z doesn't seem to work correctly
+    }
+    if (dat[,.N] > 0) {
+      dat<-rbindlist(list(dat, datos))
+    } else {
+      dat<-datos
+    }
+  }
+  HC<-unique(dat,by=c("Hex", "valid", "fullHex"))[,.(Hex,valid,fullHex)]
+  dtvalid<-HC[valid==1]
+  invalid<-HC[valid==0]
+  setkey(dtvalid, Hex)
+  setkey(invalid, Hex)
+  invalid[dtvalid,`:=`(tot=.N,realTag=realTag),by=.EACHI,on="Hex",nomatch=NA]
+  setcolorder(invalid,c("Hex","fullHex","tot","realTag","valid"))
+  uiv<-unique(invalid[,.(Hex,realTag,tot)],by="Hex")
+  invalid[uiv,badTagIDs:=lapply(.SD,list),on=.(Hex),by=.EACHI]
+  return(unique(invalid,by="Hex")[,.(Hex,realTag,tot,badTagIDs)])
 }
 
 find_ePRI <- function(obj) {
@@ -364,7 +398,7 @@ filterData <- function(incomingData=NULL) {
 
 # TODO 20180313: directly in data.table
 readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Period_Nom','nPRI','PRI_estimate','ePRI','Period','PRI'), 
-                     TagColName=c('TagID_Hex','TagIDHex','TagID','TagCode_Hex','TagCode','CodeID','CodeHex','CodeID_Hex','CodeIDHex','Tag','Code','TagSN','HexCode','Tag ID (hex)'),
+                     TagColName=c('TagID_Hex','TagIDHex','TagID','TagCode_Hex','TagCode','CodeID','CodeHex','CodeID_Hex','CodeIDHex','Tag','Code','TagSN','HexCode','Tag ID (hex)','Hex'),
                      grpColName=c("Rel_Group","RelGroup","Rel_group","Release","Group","Origin","StudyID","Owner")) {
   ret <- data.frame(TagID_Hex=character(),nPRI=numeric(),rel_group=character())
   for (i in 1:nrow(vTagFileNames)) {
@@ -378,6 +412,7 @@ readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Per
     gcn = grpColName[which(grpColName %in% heads)[1]]
     if (is.null(pcn) || is.na(pcn) || length(pcn)<1 || pcn=="NA") pcn = NULL
     if (is.null(gcn) || is.na(gcn) || length(gcn)<1 || gcn=="NA") gcn = NULL
+    # browser()
     tags <- tags[,c(tcn,pcn,gcn),with=F]
     if (is.null(pcn)) {
       tags[,nPRI:=as.numeric(pv)]
@@ -523,6 +558,12 @@ cleanInnerWrap <-function(...) {
       dtFormat="%Y-%m-%d %H:%M:%OS"
     }
     # combine the DT and FracSec columns into a single time column
+    colnamelist<-as.data.table(names(dat))
+    if (colnamelist[V1=="valid",.N] > 0) {
+      if (dat[valid==0,.N] > 0) {
+        dat<-dat[valid!=0]
+      }
+    }
     if (length(mergeFrac)>0) {
       dat[,iznumb:=ifelse(is.na(
              tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
@@ -538,6 +579,7 @@ cleanInnerWrap <-function(...) {
       setnames(dat, old="newDateTime", new="dtf")
       dat[,c(mergeFrac,"fracDot"):=NULL]
     }
+    dat[,fullHex:=Hex]
     dat[nchar(Hex)==9,Hex:=substr(Hex,4,7)]
     setkey(dat, Hex)
     if (nrow(dat)==0) return(F)

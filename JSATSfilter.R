@@ -1,4 +1,4 @@
-# Version UCDTeknoFilter2.6.2_20190326_2019data.R
+# Version UCDTeknoFilter2.7.0_20190625_2019data_ERDDAP.R
 ############################################################################################################
 #            Tag Filter for JSATS Receiver Files converted from CBR description of FAST algorithm
 #                 Based on algorithm interpretation by Gabe Singer (GS) and Matt Pagel (MP)
@@ -6,7 +6,7 @@
 # 
 #                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DC)
 #                       Contributions made by: MP, GS, Colby Hause, DC, Arnold Ammann
-#                                 Version 2.6.2. Updated 2019-03-14 by MP
+#                                 Version 3.0. Updated 2019-06-25 by MP
 ############################################################################################################
 #                          Special Note from http://www.twinsun.com/tz/tz-link.htm:
 # Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -21,67 +21,74 @@
 # See also TODOs in-line
 
 
-setwd("Z:/Shared/Projects/JSATS/DSP_Spring-Run Salmon/2019/2019DOWNLOADS/HillsFerry/HillsFerry_RT/HillsFerryRT_1/030719")
+setwd("D:/tempssd2/testScript")
 memory.limit(44000)
-vTAGFILENAME = cbind(TagFilename=c("qTagListWithRelGroup.csv"),PRI=c(5)) # qPRIcsv_SJScarf_up.txt
 
-DoCleanPrePre = FALSE
-DoCleanRT = FALSE
-DoCleanShoreRT = TRUE
+install.load <- function(package.name)
+{
+  if (!require(package.name, character.only=TRUE, quietly=TRUE, warn.conflicts=TRUE)) install.packages(package.name, quiet=TRUE)
+  library(package.name, character.only=TRUE, quietly=TRUE, warn.conflicts=TRUE)
+}
 
-DoCleanJST = FALSE
-DoCleanSUM = TRUE
-DoCleanLotek = FALSE
-DoCleanATS = FALSE
+install.only <- function(package) {
+  if (!require(package, character.only=TRUE, quietly=TRUE, warn.conflicts=TRUE)) install.packages(package, quiet=TRUE)
+}
 
-RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
-RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
-SSRT_Dir = "D:/tempssd2/SS/filtered/"
+install.load('tidyverse')
+install.load('lubridate')
+install.load('data.table')
 
-RAW_DATA_DIR = "./"
-TEKNO_SUBDIR = "./" # or "" if not in a subdirectory of data directory
-ATS_SUBDIR = "" # or ""
-LOTEK_SUBDIR = "" # "Lotek/cleaned with UCD tags/" # or ""
+vTAGFILENAME <- data.table(TagFilename=c("tags/2019TEfishRice.csv","tags/qPRIcsvColeman.csv","tags/qPRIcsvColemanTank.csv","tags/qPRIcsvRice.csv","tags/qPRIcsvSJScarf.csv"),PRI=c(5,5,5,5,5)) # qPRIcsv_SJScarf_up.txt
 
-DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
-DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
+DoCleanPrePre <- FALSE
+DoCleanRT <- FALSE
+DoCleanShoreRT <- TRUE
+
+DoCleanJST <- FALSE
+DoCleanSUM <- TRUE
+DoCleanLotek <- TRUE
+DoCleanATS <- TRUE
+DoCleanERDDAP <- TRUE
+
+RT_Dir <- "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
+RT_File_PATTERN <- "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
+SSRT_Dir <- "D:/tempssd2/SS/filtered/"
+
+RAW_DATA_DIR <- "./"
+TEKNO_SUBDIR <- "./" # or "" if not in a subdirectory of data directory
+ATS_SUBDIR <- "" # or ""
+LOTEK_SUBDIR <- "" # "Lotek/cleaned with UCD tags/" # or ""
+ERDDAP_SUBDIR <- ""
+
+DoSaveIntermediate <- TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
+DoFilterFromSavedCleanedData <- TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
-FILTERTHRESH = 2 # FAST spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
-FLOPFACTOR_2.6 = 0.006 # # FAST spec: 0.006. Arnold: .04*5 = 0.2; UCD per tag, but not per-window: 0.155-0.157
-MULTIPATHWINDOW = 0.2 # FAST spec: 0.156. Arnold: 0.2
-COUNTERMAX = 12 # FAST spec: 12
+FILTERTHRESH <- 4 # FAST spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+FLOPFACTOR_2.6 <- 0.006 # # FAST spec: 0.006. Arnold: .04*5 = 0.2; UCD per tag, but not per-window: 0.155-0.157
+MULTIPATHWINDOW <- 0.2 # FAST spec: 0.156. Arnold: 0.2
+COUNTERMAX <- 12 # FAST spec: 12
 
 # add_contextmenu_winpath<-function() { # doesn't actually work properly in RStudio API
 #   .rs.addJsonRpcHandler("convert_windows_path_to_R_style",makewinpath)
 # }
 
 makewinpath<-function() { # highlight a region in the file source window (up-left), then in console window (down-left) run this func to reverse \s to /s
-  install.load <- function(package.name)
-  {
-    if (!require(package.name, character.only=T)) install.packages(package.name)
-    library(package.name, character.only=T)
-  }
+  # install.load <- function(package.name)
+  # {
+  # if (!require(package.name, character.only=TRUE)) install.packages(package.name)
+  # library(package.name, character.only=T)
+  # }
   try({
     install.load("rstudioapi")
-    adc<-rstudioapi::getSourceEditorContext()
-    ps<-rstudioapi::primary_selection(adc)
-    t<-ps$text
-    t<-gsub("\\\\","/",t)
+    adc <- rstudioapi::getSourceEditorContext()
+    ps <- rstudioapi::primary_selection(adc)
+    t <- ps$text
+    t <- gsub("\\\\","/",t)
     rstudioapi::modifyRange(ps$`range`,t,adc$id)
     rstudioapi::setSelectionRanges(ps$`range`,adc$id)
   })
 }
-###Install Load Function
-install.load <- function(package.name)
-{
-  if (!require(package.name, character.only=T)) install.packages(package.name)
-  library(package.name, character.only=T)
-}
-
-install.load('tidyverse')
-install.load('lubridate')
-install.load('data.table')
 
 # if using read.csv rather than fread (data.table), you'll want to 
 #   1. read a few entries from each column first
@@ -141,7 +148,8 @@ dtget <- data.table.get # alias
 # set up functions for calculating size of folders for progress bars
 list.files.size <- function(path = getwd(), full.names=TRUE, nodotdot = TRUE, ignore.case = TRUE, include.dirs = FALSE, ...) { 
   filelist <- data.table(filename=list.files(path=path, full.names=full.names, no.. = nodotdot, ignore.case = ignore.case, include.dirs = include.dirs, ...))
-  filelist[,size:=file.size(filename)][,tot:=sum.file.sizes(filelist)][,perc:=size/tot]
+  filelist[,`:=`(size=file.size(filename),ext=str_to_lower(tools::file_ext(filename)))][,tot:=sum.file.sizes(filelist)][,perc:=size/tot]
+  # browser()
   return(filelist)
 }
 sum.file.sizes <- function(DT) {
@@ -158,7 +166,7 @@ extractSNfromFN <-function(i) {
   return(SN)
 }
 
-recheckTekno <- function() { # not hooked into any other function. Will not automatically run.
+recheckTekno <- function() { # not hooked into any other function. Will not automatically run. # only looks for multiple checksums for a tagID
   dat<-data.table()
   for(i in list.files("./accepted",full.names=TRUE)){
     id<-as.logical(file.info(i)["isdir"])
@@ -200,7 +208,7 @@ find_ePRI <- function(obj) {
 }
 
 magicFilter2.6 <- function(dat, countermax, filterthresh){
-  blankEntry<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
+  blankEntry <- data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
   setkey(dat,dtf)
   if (dat[,.N] == 0) return(blankEntry)
   dat[,temporary:=as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")] # dput file stores datestamp in this basic format
@@ -225,18 +233,18 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
   windHits[hitsInWindow==1,hitsInWindow:=0]
   setkey(windHits, WinID, hit)
   earlyReject <- fo_windows_full[!windHits][hitsInWindow==1,hitsInWindow:=0][,`:=`(isAccepted=FALSE,ePRI=NA)][,.(hit,dtf,isAccepted,hitsInWindow,ePRI)]
-  LT<-rbind(earlyReject,windHits[,.(hit,dtf,isAccepted,hitsInWindow,ePRI)])
+  LT <- rbind(earlyReject,windHits[,.(hit,dtf,isAccepted,hitsInWindow,ePRI)])
   setkey(LT,dtf,hit)
   setnames(LT,c("hit","dtf","isAccepted","hitsInWindow","ePRI"),c("hit","initialHit","isAccepted","nbAcceptedHitsForThisInitialHit","ePRI"))
   return(LT)
 }
 
-dataFilter2.6 <- function(dat, filterthresh, countermax){
+dataFilter2.6 <- function(dat, filterthresh, countermax) {
   res <- dat[1==0] # copies structure
   iter <- 0
   setkey(dat,Hex)
   titl<-dat[!is.na(RecSN)][1][,RecSN]
-  u<-as.list(unique(dat[,.N,by = Hex][N>=filterthresh])[,1])$Hex
+  u<-as.list(unique(dat[,.N,by = Hex][N >= filterthresh])[,1])$Hex
   if (length(u)>0) {
     timerbar<-winProgressBar(title=titl, label="Tag", min=0, max=length(u), initial=0)
     for(i in u){
@@ -294,49 +302,187 @@ filterData <- function(incomingData=NULL) {
   else proces(dat=incomingData)
 }
 
+matSimplify <- function(mat) {
+  if (length(mat)==2) return(xor(mat[1],mat[2])) else return(matSimplify(matrix(mapply(FUN=xor,mat[,1],mat[,2]),ncol=2,byrow=TRUE)))
+}
+
+maximSimplify <- function(Byte=as.hexmode("72"), PolyN=c("5E","BC","61","C2","9D","23","46","8C")) {
+  x<-matrix(as.raw(as.integer(intToBits(Byte)) * sapply(PolyN,as.hexmode)),ncol=2,byrow=TRUE)
+  return(matSimplify(x))
+}
+
+calculateCRC <- function(TagCode, Barker="72", Seed="00") {
+  TC <- as.hexmode(paste0(Barker, TagCode)) # or strtoi (paste0(...),base=16)
+  byArray <- packBits(intToBits(TC))
+  s <- as.raw(as.hexmode(Seed))
+  # print(byArray)
+  # print(s)
+  # browser()
+  for(i in seq(3,1)) {
+    x <- xor(byArray[i],s)
+    s <- maximSimplify(x)
+    # print(s)
+  }
+  return(format.hexmode(s,width=2,upper.case=TRUE))
+}
+
+calculateFullTag <- function(TagCode, Barker="72", Seed="00") {
+  return(paste0(Barker,format.hexmode(as.hexmode(TagCode),width=4,upper.case=TRUE),calculateCRC(TagCode,Barker,Seed)))
+}
+
+calculateMimicType1 <- function(TagCode) {
+  high <- substr(TagCode,1,2)
+  low <- substr(TagCode,3,4)
+  nlow <- format.hexmode(bitwXor(as.hexmode(low),as.hexmode("3F")),width=2,upper.case=TRUE)
+  # format.hexmode(!as.hexmode(calculateCRC(TagCode)),upper.case=TRUE) == paste0("FFFFFF",calculateCRC(paste0(high,nlow)))
+  return(paste0(high,nlow))
+}
+
+makeMask <- function(y,z) {
+  install.load("binaryLogic")
+  bitwOr(as.integer(fillUpToBit(as.binary(1,logic=TRUE),n=y+z,TRUE)),as.integer(fillUpToByte(as.binary(0),size=4)))
+}
+
+calculateMimicType2 <- function(FullTag) {
+  install.load("binaryLogic")
+  B <- as.hexmode(substr(FullTag,1,2))
+  lb <- length(as.binary(B))
+  Iv <- bitwXor(B,as.hexmode("7F"))
+  ft <- as.hexmode(FullTag)
+  cft <- bitwAnd(ft,as.hexmode("3FFFFFFF"))
+  resf <- c()
+  resr <- c()
+  mask <- makeMask(lb,0) # bitwOr(as.integer(fillUpToBit(as.binary(1),lb,TRUE)),as.integer(fillUpToByte(binaryLogic::as.binary(0),size=4)))
+  cftv <- bitwShiftR(cft,seq(0,31))
+  resf <- which(bitwAnd(cftv,mask)==B)-1
+  resr <- which(bitwAnd(cftv,mask)==Iv)-1
+  fVect <- c()
+  rVect <- c()
+  if (length(resf)) {
+    masks <- sapply(resf, makeMask, lb)
+    fVect <- as.hexmode(sapply(masks,function(x,y) { bitwAnd(x,y) },as.integer(ft))) # fillUpToBit in makeMask is non-vectorable.
+    fVect <- bitwShiftL(fVect,24-resf)
+    # as.hexmode(fVect)
+  }
+  if (length(resr)) {
+    masks <- sapply(resr, makeMask, lb)
+    rVect <- as.hexmode(sapply(masks,function(x,y) { bitwAnd(x,y) }, as.integer(!ft)))
+    rVect <- bitwShiftL(rVect,24-resr)
+  }
+  resV <- c(fVect,rVect)
+  res <- substr(format.hexmode(resV,width=8,upper.case=TRUE),3,6)
+  # if (length(res)==0) res<-c("")
+  return(res)
+}
+
+DTMimicType2 <- function(DT) {
+  setDT(DT)
+  install.load("binaryLogic")
+  DT[,B:=as.hexmode(substr(FullTag,1,2))]
+  DT[,lb:=length(as.binary(B))]
+  DT[,Iv:=bitwXor(B,as.hexmode("7F"))]
+  DT[,ft:=as.hexmode(FullTag)]
+  DT[,cft:=bitwAnd(ft,as.hexmode("3FFFFFFF"))]
+  DT[,resf:=vector('list',nrow(DT))]
+  DT[,resr:=vector('list',nrow(DT))]
+  cftvNames <- paste0("cftv",0:31)
+  DT[,(cftvNames):=lapply(0:31,function (x,y) bitwShiftR(y,x),cft)]
+  DT[,sapply(.SD,function(x,y,z) { bitwAnd(x,y)==z },mask, B),.SDcols=(cftvNames)]
+  mask0 <- makeMask(lb,0)
+  DT[,mask:=mask0]
+  cftv <- bitwShiftR(cft,seq(0,31))
+  resf <- which(bitwAnd(cftv,mask)==B)-1
+  resr <- which(bitwAnd(cftv,mask)==Iv)-1
+  fVect <- c()
+  rVect <- c()
+  if (length(resf)) {
+    masks <- sapply(resf, makeMask, lb)
+    fVect <- as.hexmode(sapply(masks,function(x,y) { bitwAnd(x,y) },as.integer(ft))) # fillUpToBit in makeMask is non-vectorable.
+    fVect <- bitwShiftL(fVect,24-resf)
+    # as.hexmode(fVect)
+  }
+  if (length(resr)) {
+    masks <- sapply(resr, makeMask, lb)
+    rVect <- as.hexmode(sapply(masks,function(x,y) { bitwAnd(x,y) }, as.integer(!ft)))
+    rVect <- bitwShiftL(rVect,24-resr)
+  }
+  resV <- c(fVect,rVect)
+  res <- substr(format.hexmode(resV,width=8,upper.case=TRUE),3,6)
+  # if (length(res)==0) res<-c("")
+  return(res)
+}
+
+
+calculateMimicType3 <- function(TagCode) {
+  return(format.hexmode(bitwXor(as.hexmode(TagCode),as.hexmode("0001")),width=4,upper.case=TRUE))
+}
+
+calculateMimicType4 <- function(TagCode) { # 14bit inversion
+  format.hexmode(bitwXor(as.hexmode(TagCode),as.hexmode("3FFF")),width=4,upper.case=TRUE)
+}
+
+
+
+calculateAllMimics <- function(DT) {
+  setDT(DT)
+  install.load("binaryLogic")
+  DT[,FullTag:=sapply(TagID_Hex,calculateFullTag,Barker="72",Seed="00")]
+  DT[,Mimic1:=paste0(format.hexmode(as.hexmode(substr(TagID_Hex,1,2)),width=2,upper.case=TRUE),format.hexmode(bitwXor(as.hexmode(substr(TagID_Hex,3,4)),as.hexmode("3F")),width=2,upper.case=TRUE))][,Mimic2:=sapply(FullTag,calculateMimicType2)][,Mimic3:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("0001")),width=4,upper.case=TRUE)][,Mimic4:=format.hexmode(bitwXor(as.hexmode(TagID_Hex),as.hexmode("3FFF")),width=4,upper.case=TRUE)]
+  return(DT) # DT
+}
+
 # TODO 20180313: directly in data.table
 readTags <- function(vTagFileNames=vTAGFILENAME, priColName=c('PRI_nominal','Period_Nom','nPRI','PRI_estimate','ePRI','Period','PRI'), 
                      TagColName=c('TagID_Hex','TagIDHex','TagID','TagCode_Hex','TagCode','CodeID','CodeHex','CodeID_Hex','CodeIDHex','Tag','Code','TagSN','HexCode','Tag ID (hex)','Hex'),
                      grpColName=c("Rel_Group","RelGroup","Rel_group","Release","Group","Origin","StudyID","Owner")) {
   ret <- data.frame(TagID_Hex=character(),nPRI=numeric(),rel_group=character())
+  setDT(ret,key="TagID_Hex")
   for (i in 1:nrow(vTagFileNames)) {
-    fn = vTagFileNames[i,"TagFilename"]
-    if (!file.exists(fn)) { next }
-    pv = vTagFileNames[i, "PRI"]
-    tags<- fread(fn, header=T, stringsAsFactors=FALSE) #list of known Tag IDs
-    heads = names(tags)
-    tcn = TagColName[which(TagColName %in% heads)[1]] # prioritize the first in priority list
-    pcn = priColName[which(priColName %in% heads)[1]]
-    gcn = grpColName[which(grpColName %in% heads)[1]]
-    if (is.null(pcn) || is.na(pcn) || length(pcn)<1 || pcn=="NA") pcn = NULL
-    if (is.null(gcn) || is.na(gcn) || length(gcn)<1 || gcn=="NA") gcn = NULL
+    #    browser()
+    fileName <- vTagFileNames[i,TagFilename]
+    if (!file.exists(fileName)) { next }
+    pv <- as.numeric(vTagFileNames[i,PRI])
+    #    browser()
+    tags <- fread(file=fileName, header=TRUE, stringsAsFactors=FALSE, blank.lines.skip=TRUE) # list of known Tag IDs
+    heads <- names(tags)
+    tcn <- TagColName[which(TagColName %in% heads)[1]] # prioritize the first in priority list
+    pcn <- priColName[which(priColName %in% heads)[1]]
+    gcn <- grpColName[which(grpColName %in% heads)[1]]
+    if (is.null(pcn) || is.na(pcn) || length(pcn)<1 || pcn=="NA") pcn <- NULL
+    if (is.null(gcn) || is.na(gcn) || length(gcn)<1 || gcn=="NA") gcn <- NULL
     tags <- tags[,c(tcn,pcn,gcn),with=F]
     if (is.null(pcn)) {
-      tags[,nPRI:=as.numeric(pv)]
-      pcn = "nPRI"
+      tags[,nPRI:=pv]
+      pcn <- "nPRI"
     }
     if (is.null(gcn)) {
-      fn<-as.character(basename(fn))
-      tags[,rel_group:=fn]
-      gcn = "rel_group"
+      fileName <- as.character(basename(fileName))
+      tags[,rel_group:=fileName]
+      gcn <- "rel_group"
     }
     setnames(tags,c(tcn,pcn,gcn),c("TagID_Hex","nPRI","rel_group"))
-    setkey(tags,TagID_Hex)
     tags[,nPRI:=as.numeric(nPRI)]
-    tags[is.na(tags)] <- as.numeric(pv)
-    ret <- rbindlist(list(ret, tags),use.names=TRUE)
+    tags[is.na(nPRI) | nPRI==0, nPRI:=pv]
+    tags<-unique(tags,by="TagID_Hex")
+    setkey(tags,TagID_Hex)
+    ret <- rbindlist(list(ret, tags[!ret]),use.names=TRUE)
   }
   setDT(ret,key="TagID_Hex")
-  ret[,TagID_Hex:=as.character(TagID_Hex)] # drop factors
+  ret[,TagID_Hex:=substr(as.character(TagID_Hex),1,4)] # drop factors
+  # print(ret)
+  print("Read in tags. Calculating CRC checksum and potential mimic codes as per mimic_decodes_removal_process_10242012_0.doc")
+  calculateAllMimics(ret)
+  # ret[,FullTag:=calculateFullTag(TagID_Hex,Barker="72",Seed="00")][,Mimic1:=sapply(TagID_Hex,calculateMimicType1)][,Mimic2:=sapply(TagID_Hex,calculateMimicType2)][,Mimic3:=sapply(TagID_Hex,calculateMimicType3)][,Mimic4:=sapply(TagID_Hex,calculateMimicType1)]
+  # print(ret)
   return(ret)
 }
 
 isDataLine <- function(x) { # non-header
-  a<-as.character(x)
+  a <- as.character(x)
   if (is.null(a) || length(a)==0) return(FALSE) # NULL check
   if (nchar(a)==0) return(FALSE) # empty string check
   if (str_count(a,",")<5) return(FALSE) # are there too few fields to actually be data?
-  return (!grepl("SiteName",a,fixed = T)) # is it a header line
+  return(!grepl("SiteName",a,fixed = TRUE)) # is it a header line
 }
 
 elimNPCandDS <- function(x) {# NPC = nonprinting characters; DS = double-space
@@ -347,6 +493,9 @@ cleanLinesATS <- function(x) {
   return(elimNPCandDS(x))
 }
 
+catLatLon <- function(latitude, longitude) { # both numbers
+  return(paste(as.character(latitude),as.character(longitude)))
+}
 # timestamps given in days since midnight first day of 1900, corrected for 1900 not being leapyear
 # converting a number to a POSIXct timestamp seems to assume the numbers are number of seconds from midnight GMT, regardless of specified timezone
 # so, first convert the number to a date text string without timezone, then read that in as if it's PST.
@@ -357,10 +506,265 @@ lotekDateconvert <- function(x,tz="Etc/GMT+8") {
         as.POSIXct(round(x*60*60*24), origin = "1899-12-30", tz = "GMT"),
         format="%Y-%m-%dT%H:%M:%OSZ", tz="GMT" 
       ),format="%Y-%m-%dT%H:%M:%OSZ", tz=tz
-  ) )
+    ) )
 }
 
-cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL) { # for customized code (ATS)
+# functionCall, tags, precleanDir, filePattern, wpbTitle,
+# headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
+# inferredHeader, Rec_dtf_Hex_strings, mergeFrac
+
+# return values indicating leading blanks, tz, headers, rec_dtf_Hex
+# Lotek = no headers. Sample Data: 43604.3223264,  0.93844, 47710, BA5E,   745 (DateTime, TimeFrac, TagID_Dec, TagID_Hex, SigStr)
+# ATS = 10ish rows of crap, followed by
+#   Internal, SiteName,,, DateTime, TagCode, Tilt, VBatt, Temp, Pressure, SigStr, Bit Period, Threshold
+# ERDDAP CSV = 2 rows of headers, some of which are not always present.
+#   time,latitude,longitude,TagCode,general_location,river_km,local_time,Study_ID
+#   UTC,degrees_north,degrees_east,,,km,PST,
+# ERDDAP CSVP (actual extension CSV) = 1 row of headers, some of which are not always present
+#   time (UTC),latitude (degrees_north),longitude (degrees_east),TagCode,general_location,river_km (km),local_time (PST),Study_ID
+# ERDDAP CSV0 (actual extension CSV) = 0 row of headers. Presence Would have to be inferred by values. Not currently supported.
+CSVsubtype <- function(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)$", wpbTitle, tz, dtFormat, nacols, foutPrefix, Rec_dtf_Hex_strings, mergeFrac, checkType = "unknown") { # ATS, Lotek, ERDDAP
+  fileName <- lfs[i,filename]
+  # a bug in fread was encountered with a 522MB file when attempting to only read the first 20 lines with the following
+  # fc <- fread(file = fileName, nrows = 20, blank.lines.skip = TRUE, fill=TRUE, check.names=TRUE, verbose=TRUE, showProgress=interactive())
+  # switch to readr to get those lines in
+  fc <- data.table::fread(paste(readr::read_lines(fileName,n_max=20),collapse ='\n'), sep=',', blank.lines.skip=TRUE, fill=TRUE)
+  fhead <- names(fc)
+  classes <- as.vector(sapply(fc,class))
+  ATSprecolname <- startsWith(fhead[1],'Site Name:')
+  ATScolnames <- c('Internal', 'SiteName', 'SN1','SN2','DateTime', 'TagCode', 'Tilt', 'VBatt', 'Temp', 'Pressure', 'SigStr', 'Bit Period', 'Threshold', "Detection") # leaving off two blank unheadered columns
+  EC_colnames <- c('time','latitude','longitude','TagCode','general_location','river_km','local_time','Study_ID')
+  ECPcolnames <- c('time (UTC)','latitude (degrees_north)','longitude (degrees_east)','TagCode','general_location','river_km (km)','local_time (PST)','Study_ID')
+  ECfcolnames <- c('time_utc','latitude','longitude','TagCode','general_location','river_km','local_time','Study_ID')
+  LOTcolnames <- c('RecSN','datetime', 'FracSec', 'Dec', 'Hex', 'SigStr') # no header in Lotek file, but these are the names to assign to the columns
+  SS_colnames <- c("RecSN","DetOrder","DetectionDate","microsecs","TagID","Amp","FreqShift","NBW","Pressure","WaterTemp","CRC")
+  acn = which(ATScolnames %in% fhead)
+  ccn = which(EC_colnames %in% fhead)
+  pcn = which(ECPcolnames %in% fhead)
+  ctbool <- TRUE
+  # browser()
+  if (checkType=="ATS" || checkType=="unknown") {
+    if (ATSprecolname || (length(acn) > 1 && ATScolnames[acn[1]] != "TagCode")) {
+      lfs[filename==fileName,c('typeMatch','header','fun','leadingBlanks','dtFormat','hif','rdhs'):=
+                          list(TRUE,list(ATScolnames),list(cleanATScsv),0,dtFormat,TRUE,list(Rec_dtf_Hex_strings))] # as.logical(checkType=="ATS")
+      ctbool <- FALSE
+    } else {
+      lfs[filename==fileName,typeMatch:=FALSE]
+    }
+  }
+  if (checkType=="SS" || (checkType=="unknown" && ctbool)) {
+    if (length(fhead)==11 && all(startsWith(fhead,"V")) && (identical(classes,c("integer","integer","character","numeric","character","integer","integer","integer","integer","numeric","character")) ||
+                                                            identical(classes,c("integer","integer","character","numeric","integer","integer","integer","integer","integer","numeric","character")))) {
+      lfs[filename==fileName,c('typeMatch','header','fun','leadingBlanks','dtFormat','hif','rdhs'):=
+                          list(TRUE,list(SS_colnames),list(cleanInnerWrap),0,dtFormat,FALSE,list(Rec_dtf_Hex_strings))]
+      ctbool <- FALSE
+    } else {
+      lfs[filename==fileName,typeMatch:=FALSE]
+    }
+  }
+  if (checkType=="Lotek" || (checkType=="unknown" && ctbool)) {
+#    if (length(fhead)==5 && class(unlist(fc[,1]))=="numeric" && class(unlist(fc[,3]))=="numeric") { # numeric, numeric, numeric, character/numeric, numeric
+    if (length(fhead)==5 && all(startsWith(fhead,"V")) && classes[1]=="numeric" && classes[2]=="numeric" && classes[3]=="integer" && classes[5]=="integer") { # 4 is char, but could be interpretted as numeric
+      Rec_dtf_Hex_strings[1] <- NA
+      lfs[filename==fileName,c('typeMatch','header','leadingBlanks','fun','dtFormat','hif','rdhs'):=
+                          list(TRUE,list(LOTcolnames[-1]),0,list(cleanInnerWrap),dtFormat,FALSE,list(Rec_dtf_Hex_strings))]
+      ctbool <- FALSE
+    } else if (length(fhead)==6 && all(startsWith(fhead,"V")) && classes[1]=="character" && classes[2]=="numeric" && classes[3]=="numeric" && classes[4]=="integer" && classes[6]=="integer") { # 5 is char, but could be interpretted as numeric
+      Rec_dtf_Hex_strings[1] <- "RecSN"
+      lfs[filename==fileName,c('typeMatch','header','leadingBlanks','fun','dtFormat','hif','rdhs'):=
+                          list(TRUE,list(LOTcolnames),0,list(cleanInnerWrap),dtFormat,FALSE,list(Rec_dtf_Hex_strings))]
+      ctbool <- FALSE
+    } else {
+      lfs[filename==fileName,typeMatch:=FALSE]
+    }
+  }
+  if (checkType=="ERDDAP" || checkType=="ERDAP" || checkType=="ERRDAP" || (checkType=="unknown" && ctbool)) {
+    if (length(ccn) > 1 || length(pcn) > 1) {
+      if (length(ccn)>length(pcn)) {
+        magicWhich <- ccn
+        headerlines<- 2
+      } else {
+        magicWhich <- pcn
+        headerlines<- 1
+      }
+      hd <- ECfcolnames[magicWhich]
+      time_types <- c("time_utc","local_time")
+      loc_types <- c("general_location","river_km")
+      ltsel <- loc_types[which(loc_types %in% hd)]
+      if (length(ltsel)==0) ltsel<-c(catLatLon) 
+      rdhs1 <- c(ltsel[1],time_types[which(time_types %in% hd)][1],"TagCode")
+      dt1 <- if (rdhs1[2]=="time_utc") "%Y-%m-%dT%H:%M:%SZ" else "%Y-%m-%d %H:%M:%S"
+      lfs[filename==fileName,c("typeMatch","header","leadingBlanks","rdhs","hif","dtFormat"):=list(TRUE,list(hd),headerlines,list(rdhs1),FALSE,dt1)]
+      lfs[filename==fileName,fun:=list(list(cleanInnerWrap))]
+      ctbool <- FALSE
+    } else {
+      if (all(startsWith(fhead,"V")) && length(ccn)==0 && length(pcn)==0 && # no headers
+          !(length(classes)==5 && classes[1]=="numeric" && classes[2]=="numeric" && classes[3]=="integer" && classes[5]=="integer") && 
+          !(length(classes)==6 && classes[1]=="character" && classes[2]=="numeric" && classes[3]=="numeric" && classes[4]=="integer" && classes[6]=="integer") # exclude Lotek styles
+      ) { # TODO: adjust TagCode column (4) to allow for integer type as derived from top 20 rows
+        colMatrix <- data.table(pat = list(c("character","numeric","numeric","character","character","numeric","character","character"), # all
+                                           c("numeric","numeric","character","character","numeric","character","character"), # missing UTC
+                                           c("character","numeric","numeric","character","character","character","character"), # missing rkm
+                                           c("character","numeric","numeric","character","character","numeric","character"), # missing localtime or studyid
+                                           c("character","numeric","numeric","character","numeric","character","character"), # missing genloc
+                                           
+                                           c("character","character","character","numeric","character","character"), # missing lat/long
+                                           c("numeric","numeric","character","character","character","character"), # missing utc, rkm
+                                           c("numeric","numeric","character","numeric","character","character"), # missing utc, genloc
+                                           c("numeric","numeric","character","character","numeric","character"), # missing utc, studyid (has localtime)
+                                           c("character","numeric","numeric","character","character","numeric"), # missing localtime, studyID
+                                           c("character","numeric","numeric","character","character","character"), # missing rkm, either lcltime or studyid (or genloc)
+                                           c("character","numeric","numeric","character","numeric","character"), # missing genloc, either lcltime or studyid
+                                           
+                                           c("character","character","character","character","character"), # missing lat/long, rkm
+                                           c("character","character","character","numeric","character"), # missing lat/long, either lcltime or studyid
+                                           c("character","character","numeric","character","character"), # missing lat/long, genloc; alternately missing UTC, lat/long
+                                           c("character","numeric","numeric","character","character"), # missing rkm, two of localtime, studyid, genloc
+                                           c("character","numeric","numeric","character","numeric"), # missing genloc, localtime, studyid
+                                           c("numeric","numeric","character","numeric","character"), # missing utc, genloc, studyID (has localtime)
+                                           c("numeric","numeric","character","character","character"), # missing utc, rkm, studyID or genloc (has localtime)
+                                           
+                                           c("character","character","character","character"), # missing lat/long, rkm, either lcltime or studyID
+                                           c("character","character","character","numeric"), # missing lat/long, lcltime, studyID
+                                           c("character","character","numeric","character"), # missing lat/long, genloc, either lcltime or studyID
+                                           c("numeric","numeric","character","character"), # missing utc, genloc, rkm, studyid (has localtime)
+                                           
+                                           c("character","character","character"), # time, tag, genloc  OR  tag, genloc, lcltime
+                                           c("character","numeric","character"), # tag, rkm, localtime
+                                           c("character","character","numeric")), # utc, tag, rkm
+                                
+                                field=list(c('time_utc','latitude','longitude','TagCode','general_location','river_km','local_time','Study_ID'), # all
+                                           c('latitude','longitude','TagCode','general_location','river_km','local_time','Study_ID'),
+                                           c('time_utc','latitude','longitude','TagCode','general_location','local_time','Study_ID'),
+                                           c('time_utc','latitude','longitude','TagCode','general_location','river_km','PST_or_study_ID'),
+                                           c('time_utc','latitude','longitude','TagCode','river_km','local_time','Study_ID'),
+                                           
+                                           c('time_utc','TagCode','general_location','river_km','local_time','Study_ID'),
+                                           c('latitude','longitude','TagCode','general_location','local_time','Study_ID'),
+                                           c('latitude','longitude','TagCode','river_km','local_time','Study_ID'),
+                                           c('latitude','longitude','TagCode','general_location','river_km','local_time'),
+                                           c('time_utc','latitude','longitude','TagCode','general_location','river_km'),
+                                           c('time_utc','latitude','longitude','TagCode','general_location_or_PST','PST_or_Study_ID'),
+                                           c('time_utc','latitude','longitude','TagCode','river_km','PST_or_Study_ID'),
+                                           
+                                           c('time_utc','TagCode','general_location','local_time','Study_ID'),
+                                           c('time_utc','TagCode','general_location','river_km','PST_or_Study_ID'),
+                                           if (!is.na(fast_strptime(as.character(fc[1,V1]),"%Y-%m-%dT%H:%M:%SZ"))) { # either UTC, TagCode, rkm, pst, studyID or TagCode, genloc, rkm, localtime, studyID
+                                             c('time_utc','TagCode','river_km','local_time','Study_ID') # UTRLS
+                                           } else {
+                                             c('TagCode','general_location','river_km','local_time','Study_ID') #TGRLS
+                                           },
+                                           c('time_utc','latitude','longitude','TagCode','general_location_or_PST_or_Study_ID'),
+                                           c('time_utc','latitude','longitude','TagCode','river_km'),
+                                           c('latitude','longitude','TagCode','river_km','local_time'),
+                                           c('latitude','longitude','TagCode','general_location_or_PST','PST_or_Study_ID'),
+                                           
+                                           c('time_utc','TagCode','general_location','PST_or_Study_ID'),
+                                           c('time_utc','TagCode','general_location','river_km'),
+                                           c('time_utc','TagCode','river_km','PST_or_Study_ID'),
+                                           c('latitude','longitude','TagCode','local_time'),
+                                           
+                                           if (!is.na(fast_strptime(as.character(fc[1,V1]),"%Y-%m-%dT%H:%M:%SZ"))) { # either time, tag, genloc  OR  tag, genloc, lcltime
+                                             c('time_utc','TagCode','general_location')
+                                           } else {
+                                             c('TagCode','general_location','local_time')
+                                           },
+                                           c('TagCode','river_km','local_time'),
+                                           c('time_utc','TagCode','river_km')),
+                                
+                                rdhs =list(c('general_location','time_utc','TagCode'),
+                                           c('general_location','local_time','TagCode'),
+                                           c('general_location','time_utc','TagCode'),
+                                           c('general_location','time_utc','TagCode'),
+                                           c('river_km','time_utc','TagCode'),
+                                           
+                                           c('general_location','time_utc','TagCode'), # length 6 block
+                                           c('general_location','local_time','TagCode'),
+                                           c('river_km','local_time','TagCode'),
+                                           c('general_location','local_time','TagCode'),
+                                           c('general_location','time_utc','TagCode'),
+                                           if (!is.na(fast_strptime(as.character(fc[1,V5]),"%Y-%m-%d %H:%M:%S")) && length(classes)==6) { # location from general_location_or_PST or lat+long
+                                             c(list(catLatLon), 'time_utc', 'TagCode') # function call to catLatLon
+                                           } else {
+                                             c('general_location_or_PST','time_utc','TagCode')
+                                           },
+                                           c('river_km','time_utc','TagCode'),
+                                           
+                                           c('general_location','time_utc','TagCode'), # length 5 block
+                                           c('general_location','time_utc','TagCode'),
+                                           if (!is.na(fast_strptime(as.character(fc[1,V1]),"%Y-%m-%dT%H:%M:%SZ"))) {
+                                             c('river_km','time_utc','TagCode')
+                                           } else {
+                                             c('general_location','local_time','TagCode')
+                                           },
+                                           if (length(classes)==5) {
+                                             c(list(catLatLon),'time_utc','TagCode') # location from lat+long OR general_location_or_PST_or_Study_ID
+                                           } else { # just avoiding catLatLon whenever possible.
+                                             c('bs','time_utc','TagCode')
+                                           },
+                                           c('river_km','time_utc','TagCode'),
+                                           c('river_km','local_time','TagCode'),
+                                           if (length(fhead)==5 && !is.na(fast_strptime(as.character(fc[1,V4]),"%Y-%m-%d %H:%M:%S"))) { # localtime from general_location_or_PST or PST_or_Study_ID; location from general_location_or_PST or lat+long
+                                             c(list(catLatLon),'general_location_or_PST','TagCode')
+                                           } else {
+                                             c('general_location_or_PST','PST_or_Study_ID','TagCode')
+                                           },
+                                           
+                                           c('general_location','time_utc','TagCode'),
+                                           c('general_location','time_utc','TagCode'),
+                                           c('river_km','time_utc','TagCode'),
+                                           if (length(classes)==4) {
+                                             c(catLatLon,'local_time','TagCode') # location from lat+long
+                                           } else { # avoiding function insertion
+                                             c('bs','local_time','TagCode')
+                                           },
+                                           
+                                           if (is.na(fast_strptime(as.character(fc[1,V1]),"%Y-%m-%dT%H:%M:%SZ"))) {
+                                             c('general_location','local_time','TagCode')
+                                           } else {
+                                             c('general_location','time_utc','TagCode')
+                                           },
+                                           c('river_km','local_time','TagCode'),
+                                           c('river_km','time_utc','TagCode')))
+
+        ColMatrix[,TagIndex:=sapply(field, function(x) { which("TagCode"==x)})
+                  ][,pat2:=mapply(function(x,y) c(x[seq(1,length.out=y-1)],"integer",x[seq(y+1,length.out=length(x)-y)]),ColMatrix$pat,ColMatrix$TagIndex)]
+        centry <- colMatrix[sapply(pat,identical,classes) | sapply(pat2,identical,classes)]
+        if (centry[,.N] > 0) {
+          rdhs1<-unlist(centry[1][,rdhs])
+          if (rdhs1[2]=="time_utc") {
+            dtF<-"%Y-%m-%dT%H:%M:%SZ"
+            tzz <- "GMT"
+          } else { 
+            dtF <- "%Y-%m-%d %H:%M:%S"
+            tzz <- "Etc/GMT+8"
+          }
+          lfs[filename==fileName,c('typeMatch','header','rdhs','leadingBlanks','dtFormat','hif','fun'):=list(TRUE,centry[,field][1],list(rdhs1),0,dtF,FALSE,list(cleanInnerWrap))]
+          ctbool <- FALSE
+        }
+      } else {
+        lfs[filename==fileName,typeMatch:=FALSE]
+      }
+    }
+  }
+  if (ctbool) {
+    print(paste("file",fileName,"didn't match",sQuote(checkType),"format"))
+    # file didn't match anything
+  } else {
+    print(paste("file",fileName,"matched",sQuote(checkType),"format"))
+  }
+  if (lfs[filename==fileName & typeMatch==TRUE, .N] > 0) {
+    lfsmatch <- lfs[filename==fileName & typeMatch==TRUE][1]
+    # print(lfsmatch[,fun][[1]])
+    funct <- unlist(lfsmatch[,fun][[1]])()
+    # browser()
+    funct(i=fileName, tags, lfsmatch$hif, lfsmatch$leadingBlanks, tz, lfsmatch$dtFormat, nacols, foutPrefix,
+                 unlist(lfsmatch$header), unlist(lfsmatch$rdhs), mergeFrac)
+  }
+  return # (lfs)
+}
+
+cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=NULL, technology="ATS") { # for customized code (ATS)
   lfs<-list.files.size(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs=FALSE)
   # lf<-list.files(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs = FALSE)
   tf<-length(lfs[,filename]) # total files
@@ -379,23 +783,27 @@ cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=
     if (id==TRUE) next
     lab<-paste0(basename(fn),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
     setWinProgressBar(pb,rt,label=lab)
-    functionCall(fn, tags)
+    if (lfs[i,ext]=="csv" || lfs[i,ext]=="txt") {
+      CSVsubtype(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)$", wpbTitle, tz, dtFormat, nacols, foutPrefix, Rec_dtf_Hex_strings, mergeFrac, checkType = technology)
+    } else {
+      functionCall(fn, tags)
+    }
   }
   close(pb)
-  return(T)
+  # return(T)
 }
 
 cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle,
                               headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
-                              inferredHeader, Rec_dtf_Hex_strings, mergeFrac) {
-  if (grepl(pattern="LOTEK",precleanDir,ignore.case=TRUE)) {
-    filePattern = paste0("(*.CSV)|",filePattern)
-  }
-  print(filePattern)
-  print(precleanDir)
-  print(wpbTitle)
+                              inferredHeader, Rec_dtf_Hex_strings, mergeFrac, technology) {
+  # if (grepl(pattern="LOTEK",precleanDir,ignore.case=TRUE)) {
+  #   filePattern = paste0("(*.CSV)|",filePattern)
+  # }
+  # print(filePattern)
+  # print(precleanDir)
+  # print(wpbTitle)
   lfs<-list.files.size(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs=FALSE)
-  print(lfs)
+  # print(lfs)
   tf<-length(lfs[,filename]) # total files
   if (tf==0) return(F)
   tfs<-lfs[,tot][1] # total file sizes
@@ -405,18 +813,26 @@ cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbT
   for(i in 1:tf){
     ts <- lfs[i,size]
     if (ts==0) next
-    fn <- lfs[i,filename]
+    fileName <- lfs[i,filename]
     rt <- rt+ts
-    id<-as.logical(file.info(fn)["isdir"])
-    if (is.null(id) || is.na(id)) id <- TRUE
+    id<-as.logical(file.info(fileName)["isdir"])
+    if (is.null(id) || is.na(id)) id<-TRUE
     if (id==TRUE) next
-    lab<-paste0(basename(fn),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
+    lab<-paste0(basename(fileName),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
     setWinProgressBar(pb,rt,label=lab)
-    functionCall(i=fn, tags, headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
-                 inferredHeader, Rec_dtf_Hex_strings, mergeFrac)
+    # str(functionCall)
+    # print(tags)
+    # print(paste("file:",fileName,"    header?:",headerInFile,"    header/blank lines:",leadingBlanks,"    timezone:",tz))
+    # print(paste("date format",dtFormat,"    naCols:",toString(nacols),"    output file prefix:",foutPrefix,"    header:",toString(inferredHeader),"    rdh strings:",toString(Rec_dtf_Hex_strings),"    mergefrac:",mergeFrac))
+    if (lfs[i,ext]=="csv" || lfs[i,ext]=="txt") {
+      CSVsubtype(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)$", wpbTitle, tz, dtFormat, nacols, foutPrefix, Rec_dtf_Hex_strings, mergeFrac, checkType = technology)
+    } else {
+      functionCall(i=fileName, tags, headerInFile, leadingBlanks, tz, dtFormat, nacols, foutPrefix,
+                   inferredHeader, Rec_dtf_Hex_strings, mergeFrac)
+    }
   }
   close(pb)
-  return(T)
+  # return(T)
 }
 
 cleanInnerWrap <-function(...) {
@@ -435,6 +851,7 @@ cleanInnerWrap <-function(...) {
       dat <- na.omit(dat,cols=nacols)
     }
     if (nrow(dat)==0) return(F)
+    # browser()
     if (is.na(Rec_dtf_Hex_strings[1]))  {
       SN <- extractSNfromFN(i)
       dat[,RecSN:=SN]
@@ -447,6 +864,7 @@ cleanInnerWrap <-function(...) {
     }
     # combine the DT and FracSec columns into a single time column
     colnamelist<-as.data.table(names(dat))
+    # browser()
     if (colnamelist[V1=="valid",.N] > 0) {
       if (dat[valid==0,.N] > 0) {
         dat<-dat[valid!=0]
@@ -454,15 +872,15 @@ cleanInnerWrap <-function(...) {
     }
     if (length(mergeFrac)>0) {
       dat[,iznumb:=ifelse(is.na(
-             tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
-                                ),FALSE,TRUE)
-          ][iznumb==T         ,gt1:=(as.numeric(eval(as.name(mergeFrac)))>=1)
-          ][gt1==T,fracLead0:=sprintf("%7.6f",as.numeric(eval(as.name(mergeFrac)))/1000000)
+        tryCatch(suppressWarnings(as.numeric(eval(as.name(mergeFrac)))))
+      ),FALSE,TRUE)
+      ][iznumb==T         ,gt1:=(as.numeric(eval(as.name(mergeFrac)))>=1)
+        ][gt1==T,fracLead0:=sprintf("%7.6f",as.numeric(eval(as.name(mergeFrac)))/1000000)
           ][iznumb==T & gt1==F,fracLead0:=sprintf("%7.6f",as.numeric(eval(as.name(mergeFrac))))
-          ][iznumb==T         ,fracDot:=substring(fracLead0,2)
-          ][!is.na(fracDot)   ,newDateTime:=paste0(as.character(dtf),fracDot)
-          ][ is.na(fracDot)   ,newDateTime:=as.character(dtf)
-        ]
+            ][iznumb==T         ,fracDot:=substring(fracLead0,2)
+              ][!is.na(fracDot)   ,newDateTime:=paste0(as.character(dtf),fracDot)
+                ][ is.na(fracDot)   ,newDateTime:=as.character(dtf)
+                   ]
       dat[,c("iznumb","gt1","fracLead0","dtf"):=NULL]
       setnames(dat, old="newDateTime", new="dtf")
       dat[,c(mergeFrac,"fracDot"):=NULL]
@@ -474,7 +892,14 @@ cleanInnerWrap <-function(...) {
     # convert time string into POSIXct timestamp
     dat[,dtf:=as.POSIXct(dtf, format = dtFormat, tz=tz)]
     setkey(tags,TagID_Hex)
+    setindex(tags,Mimic1,Mimic2,Mimic3,Mimic4)
+    # browser()
     dat2<-dat[tags,nomatch=0] # bring in the nominal PRI (nPRI)
+    browser()
+    dat2_Ms <- dat[tags,on=Hex %in% c("Mimic1","Mimic2","Mimic3","Mimic4")]
+    setkey(tags, Mimic1)
+    dat2_M1 <- dat[tags,nomatch=0]
+    # setkey(tags, Mimic2
     if (nrow(dat2)==0) {
       print(paste0("no matching tag hits in raw file: ",i))
       print(paste0("First tags file (",as.character(tags[,rel_group][1]),"). All tags regardless of file:"))
@@ -495,7 +920,7 @@ cleanInnerWrap <-function(...) {
     # dat4[dtf==tlag,tlag:=NA] # if we want to set the first lag dif to NA rather than 0 for the first detection of a tag
     setkey(dat4,RecSN,Hex,dtf)
     setkey(dat ,RecSN,Hex,dtf)
-    keepcols = unlist(list(colnames(dat),"nPRI")) # use initial datafile columns plus the nPRI column from the taglist file
+    keepcols <- unlist(list(colnames(dat),"nPRI")) # use initial datafile columns plus the nPRI column from the taglist file
     dat5 <- unique(dat[dat4,keepcols,with=FALSE]) # too slow? try dat[dat4] then dat5[,(colnames(dat5)-keepcols):=NULL,with=FALSE]
     setkey(dat5,RecSN,Hex,dtf)
     rm(dat4)
@@ -549,15 +974,15 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
     dat[,RecSN:=SN] # apply the value from the header to all the rows in the file
     newfn <- paste0(i,".ctmp")
     fwrite(dat,newfn)
-    headerInFile = T
-    leadingBlanks = 0
-    tz = "Etc/GMT+8"
-    dtFormat = "%m/%d/%Y %H:%M:%OS"
-    nacols = NULL # if this column is null, the row gets cut from the data set. c("Detection","Pres")
-    foutPrefix = "ATS"
-    inferredHeader = NULL
-    Rec_dtf_Hex_strings = c("RecSN","dtf","Hex")
-    mergeFrac = NULL
+    headerInFile <- TRUE
+    leadingBlanks <- 0
+    tz <- "Etc/GMT+8"
+    dtFormat <- "%m/%d/%Y %H:%M:%OS"
+    nacols <- NULL # if this column is null, the row gets cut from the data set. c("Detection","Pres")
+    foutPrefix <- "ATS"
+    inferredHeader <- NULL
+    Rec_dtf_Hex_strings <- c("RecSN","dtf","Hex")
+    mergeFrac <- NULL
     functionCall(i=newfn, tags=tags, headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, foutPrefix=foutPrefix, inferredHeader=inferredHeader, Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
     file.remove(newfn)
     itercount <<- itercount + 1
@@ -571,117 +996,133 @@ tags<-readTags(vTAGFILENAME)
 # Handle all the well-structured files
 # Realtime file formats
 if (DoCleanPrePre) {
-  headerInFile = F
-  leadingBlanks = 0
-  tz = "GMT"
-  dtFormat = "%Y-%m-%d %H:%M:%OS"
-  nacols = NULL
-  foutPrefix = "RT_npp"
-  inferredHeader = c("SQSQueue","SQSMessageID","RecSN","DLOrder","DateTime","microsecs","Hex","TxAmplitude","TxOffset","TxNBW","TxCRC")
-  Rec_dtf_Hex_strings = c("RecSN", "DateTime", "Hex")
-  mergeFrac = "microsecs"
-  functionCall<-cleanInnerWrap()
+  headerInFile <- FALSE
+  leadingBlanks <- 0
+  tz <- "GMT"
+  dtFormat <- "%Y-%m-%d %H:%M:%OS"
+  nacols <- NULL
+  foutPrefix <- "RT_npp"
+  inferredHeader <- c("SQSQueue","SQSMessageID","RecSN","DLOrder","DateTime","microsecs","Hex","TxAmplitude","TxOffset","TxNBW","TxCRC")
+  Rec_dtf_Hex_strings <- c("RecSN", "DateTime", "Hex")
+  mergeFrac <- "microsecs"
+  functionCall <- cleanInnerWrap()
   cleanOuterWrapper(functionCall, tags=tags, precleanDir = RT_Dir, filePattern = "*.CSV$", wpbTitle = "Cleaning RT files before preprocessing",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="DC")
 }
 
 if (DoCleanRT) { # preprocessed (with DBCnx.py) DataCom detection files
-  headerInFile = T
-  leadingBlanks = 0
-  tz = "GMT"
-  dtFormat = "%Y-%m-%d %H:%M:%OS"
-  nacols = NULL
-  foutPrefix = "RT"
-  inferredHeader = NULL
-  Rec_dtf_Hex_strings = c("ReceiverID","DetectionDate","TagID")
-  mergeFrac = NULL
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = RT_Dir, filePattern = RT_File_PATTERN, wpbTitle = "Cleaning Preprocessed Realtime Data",
+  headerInFile <- TRUE
+  leadingBlanks <- 0
+  tz <- "GMT"
+  dtFormat <- "%Y-%m-%d %H:%M:%OS"
+  nacols <- NULL
+  foutPrefix <- "RT"
+  inferredHeader <- NULL
+  Rec_dtf_Hex_strings <- c("ReceiverID","DetectionDate","TagID")
+  mergeFrac <- NULL
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = RT_Dir, filePattern = RT_File_PATTERN, wpbTitle = "Cleaning Preprocessed Realtime Data",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="DC")
 }
 
 if (DoCleanShoreRT){ # ShoreStation files created with
-  # cat `ls -dR */*.txt` | awk -F , 'NF == 11' > DetectionsThru2018mmdd_hhnn.csv
-  headerInFile = F
-  leadingBlanks = 0
-  tz = "GMT"
-  dtFormat = "%Y-%m-%d %H:%M:%OS"
-  nacols = NULL
-  foutPrefix = "SSRT"
-  inferredHeader = c("RecSN","DetOrder","DetectionDate","microsecs","TagID","Amp","FreqShift","NBW","Pressure","WaterTemp","CRC")
-  Rec_dtf_Hex_strings = c("RecSN","DetectionDate","TagID")
-  mergeFrac = "microsecs"
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = SSRT_Dir, filePattern = "*.csv$", wpbTitle = "Cleaning Shore Station Data",
+  headerInFile <- FALSE
+  leadingBlanks <- 0
+  tz <- "GMT"
+  dtFormat <- "%Y-%m-%d %H:%M:%OS"
+  nacols <- NULL
+  foutPrefix <- "SSRT"
+  inferredHeader <- c("RecSN","DetOrder","DetectionDate","microsecs","TagID","Amp","FreqShift","NBW","Pressure","WaterTemp","CRC")
+  Rec_dtf_Hex_strings <- c("RecSN","DetectionDate","TagID")
+  mergeFrac <- "microsecs"
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = SSRT_Dir, filePattern = "*.csv$", wpbTitle = "Cleaning Shore Station Data",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="SS")
 }
 
 # Tekno autonomous file formats
 if (DoCleanJST) {
-  headerInFile = F
-  leadingBlanks = 0
-  tz = "Etc/GMT+8"
-  dtFormat = "%m/%d/%Y %H:%M:%OS"
-  nacols = NULL
-  foutPrefix = "JT"
-  inferredHeader = c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
-  Rec_dtf_Hex_strings = c("RecSN", "DT", "Hex")
-  mergeFrac = "FracSec"
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
+  headerInFile <- FALSE
+  leadingBlanks <- 0
+  tz <- "Etc/GMT+8"
+  dtFormat <- "%m/%d/%Y %H:%M:%OS"
+  nacols <- NULL
+  foutPrefix <- "JT"
+  inferredHeader <- c("Filename", "RecSN", "DT", "FracSec", "Hex", "CRC", "validFlag", "TagAmp", "NBW")
+  Rec_dtf_Hex_strings <- c("RecSN", "DT", "Hex")
+  mergeFrac <- "FracSec"
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.JST$", wpbTitle = "Cleaning Tekno JST files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="Tekno")
 }
 
 if (DoCleanSUM) {
-  headerInFile = T
-  leadingBlanks = 8
-  tz = "Etc/GMT+8"
-  dtFormat = "%m/%d/%Y %H:%M:%OS"
-  nacols = c("Detection")
-  foutPrefix = "SUM"
-  inferredHeader = NULL
-  Rec_dtf_Hex_strings = c("Serial Number","Date Time","TagCode")
-  mergeFrac = NULL
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
+  headerInFile <- TRUE
+  leadingBlanks <- 8
+  tz <- "Etc/GMT+8"
+  dtFormat <- "%m/%d/%Y %H:%M:%OS"
+  nacols <- c("Detection")
+  foutPrefix <- "SUM"
+  inferredHeader <- NULL
+  Rec_dtf_Hex_strings <- c("Serial Number","Date Time","TagCode")
+  mergeFrac <- NULL
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = paste0(RAW_DATA_DIR,TEKNO_SUBDIR), filePattern = "*.SUM$", wpbTitle = "Cleaning SUM Files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="Tekno")
 }
 
 # Lotek Autonomous. Files are already pre-filtered for tags from their "JST" file format
 if (DoCleanLotek) {
-  headerInFile = F
-  leadingBlanks = 0
-  tz = "Etc/GMT+8"
-  dtFormat = "EPOCH"
-  nacols = NULL
-  foutPrefix = "LT"
-  inferredHeader = c("datetime", "FracSec", "Dec", "Hex", "SigStr")
-  Rec_dtf_Hex_strings = c(NA, "datetime", "Hex")
-  mergeFrac = "FracSec"
-  fn<-cleanInnerWrap()
-  cleanOuterWrapper(fn, tags=tags, precleanDir = paste0(RAW_DATA_DIR,LOTEK_SUBDIR), filePattern = "(*.LO_CSV)|(*.TXT)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
+  headerInFile <- FALSE
+  leadingBlanks <- 0
+  tz <- "Etc/GMT+8"
+  dtFormat <- "EPOCH"
+  nacols <- NULL
+  foutPrefix <- "LT"
+  inferredHeader <- c("datetime", "FracSec", "Dec", "Hex", "SigStr")
+  Rec_dtf_Hex_strings <- c(NA, "datetime", "Hex")
+  mergeFrac <- "FracSec"
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = paste0(RAW_DATA_DIR,LOTEK_SUBDIR), filePattern = "(*.LO_CSV)|(*.TXT)|(*.CSV)$", wpbTitle = "Cleaning LoTek LO_CSV and TXT files",
                     headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
                     nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
-                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac)
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="Lotek")
+}
+
+if (DoCleanERDDAP) {
+  headerInFile <- TRUE
+  leadingBlanks <- 0 # potentially 2 line header
+  tz <- "GMT"
+  dtFormat <- "%Y-%m-%dT%H:%M:%SZ"
+  nacols <- NULL
+  foutPrefix <- "ERD"
+  inferredHeader <- NULL
+  Rec_dtf_Hex_strings <- c("general_location","time (UTC)","TagCode")
+  mergeFrac <- NULL
+  funName <- cleanInnerWrap()
+  cleanOuterWrapper(funName, tags=tags, precleanDir = paste0(RAW_DATA_DIR,ERDDAP_SUBDIR), filePattern = "(*.CSV)|(*.CSVP)|(*.CSV0)|(*.ER_CSV)$", wpbTitle = "Cleaning ERDDAP Files",
+                    headerInFile=headerInFile, leadingBlanks=leadingBlanks, tz=tz, dtFormat=dtFormat, 
+                    nacols=nacols, foutPrefix=foutPrefix, inferredHeader=inferredHeader, 
+                    Rec_dtf_Hex_strings=Rec_dtf_Hex_strings, mergeFrac=mergeFrac, technology="ERDDAP")
 }
 
 # Last, do the files with less structure (needing customized code)
 # ATS autonomous
 if (DoCleanATS) {
-  fn<-cleanATSxls() # converts Excel files to a CSV-style file
-  cleanWrapper(fn, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "*.XLS[X]?$", wpbTitle = "Converting ATS XLS(x) files")
-  fn<-cleanATScsv() # clean ATS CSVs
-  cleanWrapper(fn, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "(*.XTMP)|(*.CSV)|(*.ATS_CSV)$", wpbTitle = "Cleaning ATS CSV files")
+  funName <- cleanATSxls() # converts Excel files to a CSV-style file
+  cleanWrapper(funName, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "*.XLS[X]?$", wpbTitle = "Converting ATS XLS(x) files")
+  funName <- cleanATScsv() # clean ATS CSVs
+  cleanWrapper(funName, tags, precleanDir = paste0(RAW_DATA_DIR,ATS_SUBDIR), filePattern = "(*.XTMP)|(*.CSV)|(*.ATS_CSV)$", wpbTitle = "Cleaning ATS CSV files")
 }
 
 ###Do the filtering loop

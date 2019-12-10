@@ -1,10 +1,12 @@
-See also: data.frame branch (old): https://github.com/UCDavisBiotelemetry/JSATSfilter/tree/data.frame and branch history at https://github.com/UCDavisBiotelemetry/JSATSfilter/network
+# See also
+* data.frame branch (old & significantly slower): https://github.com/UCDavisBiotelemetry/JSATSfilter/tree/data.frame
+* branch history at https://github.com/UCDavisBiotelemetry/JSATSfilter/network
 
 # ChangeLog: data.table branch
 JSATS filtering algorithm: data.table version changelog. Dates may be circa. Functionality is not guaranteed at any archived stage.
-Primary author is Matthew Pagel, Gabriel Singer provided early versions and consulted
+Primary author is Matthew Pagel, Gabriel Singer provided early versions and consulted. Major benchmark versions in bold.
 
-Version 2.7.1	2019-08-06
+**Version 2.7.1	2019-08-06**
 * Added a function to look at last n detections for each tag rather than the whole set: used for tag life studies
 * Added lookup for mimic type 2, fixed calculation for M2s
 * Deactivate mimic determination as part of the main pipeline. Target version 3.0
@@ -17,7 +19,7 @@ Version 2.7	2019-06-25
 * ERDDAP file processing from downloaded CSV; code replaces old differentiation of files by extension and folder only
 * Switch `=` assignments to `<-`
 
-Version 2.6.2	2019-03-26
+**Version 2.6.2	2019-03-26**
 * Cleanup: remove pre-2.6 code
 * Fix duplication issue caused by identical timestamps for different tags on same Lotek receiver
 * Memory use reduction in filtering
@@ -33,7 +35,7 @@ Version 2.6.1.2	2018-09-26
 Version 2.6.1.1	2018-09-24
 * Enforces requirement that hits to validate a window have to happen within the first 12 PRI cycles (rather than 1.3 * nPRI * 12)
 
-Version 2.6.1	2018-09-20
+**Version 2.6.1	2018-09-20**
 * MAJOR REWRITE activated - now mirrors FAST algorithm in considering ePRI per window and per tag rather than just per tag
 * Filter function is supplied one hex tag at a time, simplifies filter
 * Zero valid hit detection/early exit
@@ -119,7 +121,7 @@ Version 2.4 2017-11-22
 * POSIXct timezone adjusted
 * Addition of more WinProgressBars
 
-Version 2.3b (first operational data.table version) 2017-11-31
+**Version 2.3b** (first operational data.table version) **2017-11-31**
 * Runtime constants added
 * Code added to properly parse data.table temporary files
 * Much optimization of magicFunc re: data.table and elimination of data.frame reliant code
@@ -150,7 +152,7 @@ Version 1.4a (inoperative) 2017-08-31
 * SUM files (in addition to JSTs) checked for multipath
 
 data.frame ancestors (Gabe Singer author)
-Version 1.3b	2017-08-24
+**Version 1.3b	2017-08-24**
 * Adds in a "mode" function for determining the most frequent PRI encountered in a given window.
 * Reads in a taglist file
 * Can process SUM files in addition to JSTs

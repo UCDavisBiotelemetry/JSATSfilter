@@ -1,10 +1,10 @@
-# Version UCDTeknoFilter2.6.1.0_20180920.R
+# Version UCDTeknoFilter2.6.1.1_20180924.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-09-20 by Matt Pagel
-#                                    The much anticipated Version 2.6.1!!!
+#                                   Last Updated: 2018-09-24 by Matt Pagel
+#                                    The much anticipated Version 2.6.1.1!!!
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -23,34 +23,34 @@
 # daily temperature flux <= 4 Kelvin out of 300ish = 1.333% variance in clock rate within a day
 
 #setwd("Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/")
-setwd("P:/TempSSD/Files for Matt")
+setwd("P:/TempSSD/Files for Matt/2018 raw data/singleFile/MattAlgo")
 memory.limit(44000)
 # 2017
 # vTAGFILENAME = cbind(TagFilename=c("taglist/2017/FrianttaglistUCDtags(withBeacon).csv","taglist/2017/Brandes.csv"),PRI=c(5,5))
 # 2018
-vTAGFILENAME = cbind(TagFilename=c("2018 raw data/tag list/t2018TagInventory.csv","2018 raw data/tag list/qMultiAgencyTagList.csv","2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
+vTAGFILENAME = cbind(TagFilename=c("../../../2018 raw data/tag list/t2018TagInventory.csv","../../../2018 raw data/tag list/qMultiAgencyTagList.csv","../../../2018 raw data/tag list/PckTags.csv"),PRI=c(5,5,3))
 
 DoCleanPrePre = FALSE
 DoCleanRT = FALSE
 DoCleanShoreRT = FALSE
 DoCleanJST = FALSE
-DoCleanSUM = TRUE
-DoCleanLotek = FALSE
-DoCleanATS = TRUE
+DoCleanSUM = FALSE
+DoCleanLotek = TRUE
+DoCleanATS = FALSE
 
 RT_Dir = "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
 RT_File_PATTERN = "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
 SSRT_Dir = "P:/Win8Usr/mpagel/Downloads/UC.Davis"
-NON_RT_Dir = "2018 Raw Data/data/"
+NON_RT_Dir = "." # "2018 Raw Data/data/"
 TEKNO_SUBDIR = "Tekno/" # or "" if not in a subdirectory of data directory
 ATS_SUBDIR = "ATS/" # or ""
-LOTEK_SUBDIR = "Lotek/cleaned with UCD tags/" # or ""
+LOTEK_SUBDIR = "" # "Lotek/cleaned with UCD tags/" # or ""
 
 DoSaveIntermediate = TRUE # (DoCleanJST || DoCleanSUM || DoCleanATS || DoCleanLotek)
 DoFilterFromSavedCleanedData = TRUE || !DoSaveIntermediate # if you're not saving the intermediate, you should do direct processing
 
 # Algorithm constants.
-FILTERTHRESH = 3 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
+FILTERTHRESH = 2 # PNNL spec: 4. Arnold: 2 for ATS&Tekno, 4 for Lotek
 FLOPFACTOR = 0.155 # PNNL "spec": 0.006. Arnold: .04*5 = 0.2
 FLOPFACTOR_2.6 = 0.006 
 MULTIPATHWINDOW = 0.2 # PNNL spec: 0.156. Arnold: 0.2
@@ -173,7 +173,7 @@ magicFilter2.6 <- function(dat, countermax, filterthresh){
   if (fo_windows[,.N] == 0) return(blankEntry)
   setkey(fo_windows,WinID)
   fo_windows[,ePRI:=find_ePRI(.SD),by=WinID,.SDcols=c("twind","nPRI")][,nP:=round(twind/ePRI,0)][,`:=`(maxdif=(nP+1)*FLOPFACTOR_2.6,windif=abs(nP*ePRI-twind))]
-  windHits <- fo_windows[windif<=maxdif]
+  windHits <- fo_windows[windif<=maxdif & nP<=countermax]
   if (windHits[,.N] == 0) return(blankEntry)
   setkey(windHits,WinID)
   windHits[,hitsInWindow:=.N,by=WinID][,isAccepted:=(hitsInWindow>=filterthresh)]
@@ -315,11 +315,12 @@ filterData <- function(incomingData=NULL) {
         datos <-as.data.table(fread(i))
         datos[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # %OS6Z doesn't seem to work correctly
       }
+      # browser()
       proces(dat=datos)
     }
   }
   proces <- function(dat) {
-    myResults <- dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX) # dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
+    myResults <- dataFilter2.6(dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX) # dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
     setkey(dat,dtf) # TODO 20180313: we should probably put TagID_Hex and RecSN in the key also
     setkey(myResults,dtf)
     rejecteds <- dat[!myResults]
@@ -443,7 +444,11 @@ cleanOuterWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbT
   if (grepl(pattern="LOTEK",precleanDir,ignore.case=TRUE)) {
     filePattern = paste0("(*.CSV)|",filePattern)
   }
+  print(filePattern)
+  print(precleanDir)
+  print(wpbTitle)
   lfs<-list.files.size(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs=FALSE)
+  print(lfs)
   # lf<-list.files(precleanDir, pattern=filePattern, full.names=TRUE, include.dirs = FALSE)
   tf<-length(lfs[,filename]) # total files
   if (tf==0) return(F)

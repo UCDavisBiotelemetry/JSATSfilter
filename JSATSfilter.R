@@ -1,10 +1,10 @@
-# Version MP_TeknoFilter2.5.3.2_20180716.R
+# Version UCDTeknoFilter2.6.1.0_20180920.R
 ###################################################################################################################
 #
 #                         Tag Filter for Teknologic Receiver Files converted from CBR description
 #                           Written by: Gabe Singer, Damien Caillaud     On: 05/16/2017
-#                                   Last Updated: 2018-07-16 by Matt Pagel
-#                                  Version 2.5.3.2 (2.6 functions inactive)
+#                                   Last Updated: 2018-09-20 by Matt Pagel
+#                                    The much anticipated Version 2.6.1!!!
 #
 #                             Special Note from http://www.twinsun.com/tz/tz-link.htm:
 #        Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -142,66 +142,48 @@ extractSNfromFN <-function(i) {
 
 find_ePRI <- function(obj) {
 #  browser()
-  N<-nrows(obj)
+  N<-nrow(obj)
   tmp<-data.table(merge.data.frame(x=1:COUNTERMAX,obj))
 #  tmp<-tmp[twind>0]
   itr<-tmp[,ic:=round(twind/x,2)]
   ll <- itr[(ic >= nPRI*0.651 & ic<=nPRI*1.3)]
-  setkey(ll,Hex,ic)
+  setkey(ll,ic)
   rv<-ll[,dist:=abs(nPRI-ic)][,.(tot=.N),by=.(ic,dist)][order(-tot,dist,-ic)][1]
   retval<-data.table(rep(rv$ic,N))
   return(retval)
 }
 
 magicFilter2.6 <- function(dat, countermax, filterthresh){
-  setkey(dat,Hex,dtf)
+  blankEntry<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
+  setkey(dat,dtf)
+  if (dat[,.N] == 0) return(blankEntry)
   dat[,temporary:=as.POSIXct(dtf, format = "%m/%d/%Y %H:%M:%OS", tz="Etc/GMT+8")] # dput file stores datestamp in this basic format
   if (is.na(dat[,.(temporary)][1])) dat[,dtf:=as.POSIXct(dtf, format = "%Y-%m-%dT%H:%M:%OSZ", tz="UTC")] # fwri file stores as UTC in this format ...was in this doc as %S.%OSZ
   else dat[,dtf:=temporary]
   dat[,temporary:=NULL]
   dat[,winmax:=dtf+((nPRI*1.3*countermax)+1)]
-  wind_range <- dat[,.(Hex,dtf,winmax,nPRI)]
-  setkey(wind_range,Hex,dtf,winmax)
-  fit <- dat[,.(Hex,dup=dtf,hit=dtf)]
-  setkey(fit,Hex,dup,hit)
-  browser()
-  fo_windows <- foverlaps(fit,wind_range,maxgap=0,type="within",nomatch=0,mult="all")[,twind:=(hit-dtf)*1000][,dup:=NULL][,winmax:=NULL][,c('hitsInWindow','WinID'):=list(.N,.GRP),by=c("Hex","dtf")][hitsInWindow>=filterthresh]
-  if (fo_windows[,.N]>0) {
-    setkey(fo_windows,WinID)
-    fo_windows[,ePRI:=find_ePRI(.SD),by=WinID,.SDcols=c("twind","nPRI")]
-    # itr <- as.data.table(merge(x=1:countermax,fo_windows))
-    # itr[,icalc:=round(twind/x,2)]
-    flopintervals <-as.data.table(0:countermax)
-    setnames(flopintervals,c("x"))
-    flopintervals[,flop:=(x+1)*FLOPFACTOR_2.6][,flopmin:=x*ePRI-flop][,flopmax:=x*ePRI+flop][,flop:=NULL]
-    maxflop <- flopintervals[x==12,flopmax]
-    windowz <- unique(abbrev[,.(dtf,ewinmax=dtf+maxflop)])
-    dett <-res[,.(dup=dtf,dd=dtf)]
-    setkey(dett,dup,dd)
-    setkey(windowz,dtf,ewinmax)
-    fomega <- foverlaps(dett,windowz,maxgap=0,type="within",nomatch=0)[,dd:=NULL][,dif:=(dup-dtf)*1000][,dif2:=(dup-dtf)*1000]
-    flopintervals[,newmin:=flopmin*1000][,newmax:=flopmax*1000]
-    setkey(flopintervals,newmin,newmax)
-    if (fomega[,.N]>0) {
-      setkey(fomega,dif,dif2)
-      windHits<-foverlaps(fomega,flopintervals,maxgap=0,type="within",nomatch=0)[,.(firstHit=dtf,windowEnd=ewinmax,hit=dup,intervals=x,ePRI)]
-      NAs<-windHits[is.na(intervals)]
-      noNAs<-windHits[!is.na(intervals)][,c:=.N,keyby="firstHit"] # do I need to check for no lines before c code?
-      noOnlyFirst<-noNAs[c>1]
-      onlyFirst<-noNAs[c==1,]
-      noOnlyFirst[,isAccepted:=TRUE]
-      NAs[,isAccepted:=FALSE][,c:=NA]
-      onlyFirst[,isAccepted:=FALSE][,c:=0]
-      LT<-rbind(noOnlyFirst,NAs,onlyFirst)
-      setkey(LT,firstHit,hit)
-      logTable<-LT[,.(hit=hit, initialHit=firstHit, isAccepted, nbAcceptedHitsForThisInitialHit=c, ePRI)]
-    } else {
-      logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
-    }
-  } else {
-    logTable<-data.table(hit=NA, initialHit=NA, isAccepted=FALSE, nbAcceptedHitsForThisInitialHit=0, ePRI=NA)
-  }
-  return(logTable)
+  wind_range <- dat[,.(dtf,winmax,nPRI)]
+  setkey(wind_range,dtf,winmax)
+  fit <- dat[,.(dup=dtf,hit=dtf)]
+  setkey(fit,dup,hit)
+  # browser()
+  fo_windows_full <- foverlaps(fit,wind_range,maxgap=0,type="within",nomatch=0,mult="all")[,`:=`(twind=hit-dtf,dup=NULL,winmax=NULL)][,c('hitsInWindow','WinID'):=list(.N,.GRP),by=dtf]
+  setkey(fo_windows_full, WinID, hit)
+  fo_windows <- fo_windows_full[hitsInWindow>=filterthresh]
+  if (fo_windows[,.N] == 0) return(blankEntry)
+  setkey(fo_windows,WinID)
+  fo_windows[,ePRI:=find_ePRI(.SD),by=WinID,.SDcols=c("twind","nPRI")][,nP:=round(twind/ePRI,0)][,`:=`(maxdif=(nP+1)*FLOPFACTOR_2.6,windif=abs(nP*ePRI-twind))]
+  windHits <- fo_windows[windif<=maxdif]
+  if (windHits[,.N] == 0) return(blankEntry)
+  setkey(windHits,WinID)
+  windHits[,hitsInWindow:=.N,by=WinID][,isAccepted:=(hitsInWindow>=filterthresh)]
+  windHits[hitsInWindow==1,hitsInWindow:=0]
+  setkey(windHits, WinID, hit)
+  earlyReject <- fo_windows_full[!windHits][hitsInWindow==1,hitsInWindow:=0][,`:=`(isAccepted=FALSE,ePRI=NA)][,.(hit,dtf,isAccepted,hitsInWindow,ePRI)]
+  LT<-rbind(earlyReject,windHits[,.(hit,dtf,isAccepted,hitsInWindow,ePRI)])
+  setkey(LT,dtf,hit)
+  setnames(LT,c("hit","dtf","isAccepted","hitsInWindow","ePRI"),c("hit","initialHit","isAccepted","nbAcceptedHitsForThisInitialHit","ePRI"))
+  return(LT)
 }
 
 
@@ -267,19 +249,27 @@ magicFunc <- function(dat, tagHex, countermax, filterthresh){
 
 dataFilter2.6 <- function(dat, filterthresh, countermax){
   res <- dat[1==0] # copies structure
-  # timer <- 0
+  iter <- 0
   setkey(dat,Hex)
   titl<-dat[!is.na(RecSN)][1][,RecSN]
-  ans <- magicFilter2.6(dat, countermax=countermax, filterthresh)
-  setkey(ans,nbAcceptedHitsForThisInitialHit,isAccepted)
-  ans2 <- ans[(nbAcceptedHitsForThisInitialHit >= filterthresh)&(isAccepted)]
-  if (ans2[,.N]>0) {
-    keep<-as.data.table(unique(ans2[,hit]))
-    setkey(dat,dtf)
-    setkey(keep,x)
-    res <- rbind(res, dat[keep])
+  u<-as.list(unique(dat[,.N,by = Hex][N>=filterthresh])[,1])$Hex
+  if (length(u)>0) {
+    timerbar<-winProgressBar(title=titl, label="Tag", min=0, max=length(u), initial=0)
+    for(i in u){
+      setWinProgressBar(timerbar,iter,label=i)
+      ans <- magicFilter2.6(dat[Hex==i], countermax=countermax, filterthresh)
+      setkey(ans,nbAcceptedHitsForThisInitialHit,isAccepted)
+      ans2 <- ans[(nbAcceptedHitsForThisInitialHit >= filterthresh)&(isAccepted)]
+      if (ans2[,.N]>0) {
+        keep<-as.data.table(unique(ans2[,hit]))
+        setkey(dat,dtf)
+        setkey(keep,x)
+        res <- rbind(res, dat[keep])
+      }
+      iter <- iter+1
+    } 
+    close(timerbar)
   }
-  # timer <- timer+1
   return(res)
 }
 
@@ -329,7 +319,7 @@ filterData <- function(incomingData=NULL) {
     }
   }
   proces <- function(dat) {
-    myResults <- dataFilter(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX) # dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
+    myResults <- dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX) # dataFilter2.6(dat=dat, filterthresh=FILTERTHRESH, countermax=COUNTERMAX)
     setkey(dat,dtf) # TODO 20180313: we should probably put TagID_Hex and RecSN in the key also
     setkey(myResults,dtf)
     rejecteds <- dat[!myResults]

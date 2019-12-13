@@ -1,4 +1,4 @@
-# Version UCDTeknoFilter2.7.1_20190806_2019data_Coleman.R
+# Version UCDTeknoFilter2.7.3_20191213_Tommy.R
 ############################################################################################################
 #            Tag Filter for JSATS Receiver Files converted from CBR description of FAST algorithm
 #                 Based on algorithm interpretation by Gabe Singer (GS) and Matt Pagel (MP)
@@ -6,7 +6,7 @@
 # 
 #                      Original version coded on 05/16/2017 by GS, Damien Caillaud (DC)
 #                       Contributions made by: MP, GS, Colby Hause, DC, Arnold Ammann
-#                                 Version 2.7.2. Updated 2019-08-06 by MP
+#                                 Version 2.7.3. Updated 2019-12-13 by MP
 ############################################################################################################
 #                          Special Note from http://www.twinsun.com/tz/tz-link.htm:
 # Numeric time zone abbreviations typically count hours east of UTC, e.g., +09 for Japan and -10 for Hawaii.
@@ -21,7 +21,7 @@
 # See also TODOs in-line
 
 
-setwd("D:/tempssd2/Coleman/06192019")
+setwd("D:/tempssd2/testScript")
 memory.limit(44000)
 
 install.load <- function(package.name)
@@ -38,7 +38,7 @@ install.load('tidyverse')
 install.load('lubridate')
 install.load('data.table')
 
-vTAGFILENAME <- data.table(TagFilename=c("tags/t2019TagInventory_Coleman.csv"),PRI=c(5)) # qPRIcsv_SJScarf_up.txt
+vTAGFILENAME <- data.table(TagFilename=c("tags/TommyTags.csv"),PRI=c(5))
 
 DoCleanPrePre <- FALSE
 DoCleanRT <- FALSE
@@ -46,9 +46,9 @@ DoCleanShoreRT <- FALSE
 
 DoCleanJST <- FALSE
 DoCleanSUM <- FALSE
-DoCleanLotek <- TRUE
-DoCleanATS <- FALSE
-DoCleanERDDAP <- TRUE
+DoCleanLotek <- FALSE
+DoCleanATS <- TRUE
+DoCleanERDDAP <- FALSE
 
 RT_Dir <- "Z:/LimitedAccess/tek_realtime_sqs/data/preprocess/"
 RT_File_PATTERN <- "jsats_2016901[1389]_TEK_JSATS_*|jsats_2017900[34]_JSATS_*|jsats_20169020_TEK_JSATS_17607[12]*"
@@ -548,7 +548,13 @@ CSVsubtype <- function(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)
   # a bug in fread was encountered with a 522MB file when attempting to only read the first 20 lines with the following
   # fc <- fread(file = fileName, nrows = 20, blank.lines.skip = TRUE, fill=TRUE, check.names=TRUE, verbose=TRUE, showProgress=interactive())
   # switch to readr to get those lines in
-  fc <- data.table::fread(paste(readr::read_lines(fileName,n_max=20),collapse ='\n'), sep=',', blank.lines.skip=TRUE, fill=TRUE)
+  fc <- data.table::fread(paste(readr::read_lines(fileName,n_max=2000),collapse ='\n'), sep=',', blank.lines.skip=TRUE, fill=TRUE)
+  if (names(fc)[1] == "V1") {
+    tmp <- tempfile()
+    fwrite(fc,tmp,col.names=FALSE)
+    fc<-fread(tmp,skip="SiteName",header=TRUE)
+    rm(tmp)
+  }
   fhead <- names(fc)
   classes <- as.vector(sapply(fc,class))
   ATSprecolname <- startsWith(fhead[1],'Site Name:')
@@ -562,7 +568,7 @@ CSVsubtype <- function(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)
   ccn = which(EC_colnames %in% fhead)
   pcn = which(ECPcolnames %in% fhead)
   ctbool <- TRUE
-  # browser()
+  browser()
   if (checkType=="ATS" || checkType=="unknown") {
     if (ATSprecolname || (length(acn) > 1 && ATScolnames[acn[1]] != "TagCode")) {
       lfs[filename==fileName,c('typeMatch','header','fun','leadingBlanks','dtFormat','hif','rdhs'):=
@@ -803,6 +809,12 @@ cleanWrapper <- function(functionCall, tags, precleanDir, filePattern, wpbTitle=
     if (id==TRUE) next
     lab<-paste0(basename(fn),"\n",i,"/",tf," (",((10000*rt)%/%tfs)/100,"% by size)\n")
     setWinProgressBar(pb,rt,label=lab)
+    tz <- "Etc/GMT+8"
+    dtFormat <- "%m/%d/%Y %H:%M:%OS"
+    foutPrefix <- "ATS"
+    inferredHeader <- NULL
+    Rec_dtf_Hex_strings <- c("RecSN","dtf","Hex")
+    mergeFrac <- NULL
     if (lfs[i,ext]=="csv" || lfs[i,ext]=="txt") {
       CSVsubtype(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)$", wpbTitle, tz, dtFormat, nacols, foutPrefix, Rec_dtf_Hex_strings, mergeFrac, checkType = technology)
     } else {
@@ -969,7 +981,7 @@ cleanATScsv <- function() { # have to figure out how to dovetail this with the o
   install.load('readr')
   install.load('stringr')
   functionCall<-cleanInnerWrap()
-  function(i, tags) { # run the inner function of the enclosure
+  function(i, tags, ...) { # run the inner function of the enclosure
     SN<-NA
     headr <- read_lines(i,n_max=10) # find serial number somewhere in the top 10 lines
     for (rw in 1:length(headr)) {

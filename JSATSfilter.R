@@ -374,7 +374,7 @@ calculateMimicType2 <- function(FullTag) {
   cftv <- bitwShiftR(cft,seq(0,31))
   resf <- which(bitwAnd(bitwXor(cftv,B),mask)==0)-1
   resr <- which(bitwAnd(bitwXor(cftv,Iv),mask)==0)-1
-  browser()
+  # browser()
   # print(resf)
   # print(resr)
   fVect <- c()
@@ -568,7 +568,7 @@ CSVsubtype <- function(lfs, i, tags, precleanDir, filePattern = "(*.CSV)|(*.TXT)
   ccn = which(EC_colnames %in% fhead)
   pcn = which(ECPcolnames %in% fhead)
   ctbool <- TRUE
-  browser()
+  # browser()
   if (checkType=="ATS" || checkType=="unknown") {
     if (ATSprecolname || (length(acn) > 1 && ATScolnames[acn[1]] != "TagCode")) {
       lfs[filename==fileName,c('typeMatch','header','fun','leadingBlanks','dtFormat','hif','rdhs'):=
